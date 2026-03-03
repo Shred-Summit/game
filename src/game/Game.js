@@ -60,10 +60,12 @@ export class Game {
       altitude: document.getElementById('altitude-display'),
       checkpoint: document.getElementById('checkpoint-display'),
       checkpointAlert: document.getElementById('checkpoint-alert'),
+      lobbyScreen: document.getElementById('lobby-screen'),
+      lobbyDropIn: document.getElementById('lobby-drop-in'),
     };
 
-    // Input handlers — Space OR click to start/respawn
-    this._spaceConsumed = false; // prevent ollie on first frame after start
+    // Input handlers — Space OR click to start/respawn, ESC for lobby
+    this._spaceConsumed = false;
 
     const handleStart = (e) => {
       if (this.state === 'start') {
@@ -77,12 +79,22 @@ export class Game {
 
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space') handleStart(e);
+      if (e.code === 'Escape') {
+        if (this.state === 'dead') {
+          this.openLobby();
+        } else if (this.state === 'lobby') {
+          this.closeLobby();
+        }
+      }
     });
 
     // Click/tap anywhere on start or death screen
     this.ui.startScreen.style.pointerEvents = 'auto';
     this.ui.startScreen.addEventListener('click', (e) => handleStart(e));
     this.ui.deathScreen.addEventListener('click', (e) => handleStart(e));
+
+    // Lobby setup
+    this.setupLobby();
 
     window.addEventListener('resize', () => this.onResize());
     this.animate();
@@ -147,6 +159,40 @@ export class Game {
     const rim = new THREE.DirectionalLight(0xaaccee, 0.3);
     rim.position.set(-20, 20, -10);
     this.scene.add(rim);
+  }
+
+  setupLobby() {
+    // Color swatch click handling
+    document.querySelectorAll('.color-options').forEach(group => {
+      const part = group.dataset.part;
+      group.querySelectorAll('.color-swatch').forEach(swatch => {
+        swatch.addEventListener('click', () => {
+          // Deselect siblings
+          group.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+          swatch.classList.add('selected');
+          // Apply color to player
+          const colorVal = parseInt(swatch.dataset.color);
+          this.player.setColor(part, colorVal);
+        });
+      });
+    });
+
+    // Drop In button
+    this.ui.lobbyDropIn.addEventListener('click', () => {
+      this.closeLobby();
+    });
+  }
+
+  openLobby() {
+    this.state = 'lobby';
+    this.ui.deathScreen.classList.remove('active');
+    this.ui.crashVignette.style.opacity = '0';
+    this.ui.lobbyScreen.classList.add('active');
+  }
+
+  closeLobby() {
+    this.ui.lobbyScreen.classList.remove('active');
+    this.respawn();
   }
 
   initCarveTrail() {

@@ -218,6 +218,76 @@
       font-size: 10px;
       text-align: right;
       letter-spacing: 1px;
+      max-width: 300px;
+      line-height: 1.6;
+    }
+
+    /* Lobby screen */
+    #lobby-screen {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(180deg, #0a1628 0%, #1a2a4a 40%, #2a4a6a 70%, #4a7a9a 100%);
+      z-index: 80;
+    }
+    #lobby-screen.active { display: flex; }
+    #lobby-screen h2 {
+      font-size: 48px;
+      font-family: 'Bebas Neue', sans-serif;
+      color: #fff;
+      letter-spacing: 6px;
+      margin-bottom: 30px;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    }
+    .lobby-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 18px;
+      gap: 12px;
+    }
+    .lobby-row label {
+      color: rgba(255,255,255,0.6);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      width: 90px;
+      text-align: right;
+    }
+    .color-options { display: flex; gap: 8px; }
+    .color-swatch {
+      width: 36px; height: 36px;
+      border-radius: 6px;
+      border: 3px solid transparent;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .color-swatch:hover { transform: scale(1.15); }
+    .color-swatch.selected { border-color: #fff; transform: scale(1.15); }
+    #lobby-drop-in {
+      margin-top: 30px;
+      padding: 14px 50px;
+      font-size: 20px;
+      font-family: 'Bebas Neue', sans-serif;
+      letter-spacing: 4px;
+      color: #fff;
+      background: rgba(255,255,255,0.1);
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+      pointer-events: auto;
+    }
+    #lobby-drop-in:hover { background: rgba(255,255,255,0.2); border-color: #fff; }
+    .lobby-hint {
+      margin-top: 16px;
+      color: rgba(255,255,255,0.3);
+      font-size: 12px;
+      letter-spacing: 2px;
     }
 
     /* Crash vignette */
@@ -363,6 +433,7 @@
     <div class="crash-catchphrase" id="crash-catchphrase">YARD SALE!</div>
     <div class="run-score">Score: <span id="death-score">0</span></div>
     <div class="press-restart">PRESS SPACE OR CLICK TO RESPAWN</div>
+    <div class="press-restart" style="margin-top:8px; font-size:13px; opacity:0.4">ESC — CUSTOMIZE RIDER</div>
   </div>
 
   <div id="hud">
@@ -382,7 +453,61 @@
     <div id="checkpoint-display">CHECKPOINT 1</div>
     <div id="checkpoint-alert">CHECKPOINT REACHED</div>
     <div id="trick-meter"><div id="trick-meter-fill"></div></div>
-    <div id="controls-hint">A/D STEER · S BRAKE · SPACE JUMP · SHIFT TUCK · AIR: W/S FLIP · Q/E SPIN · FLIP+SPIN=CORK · GRFTVB GRABS</div>
+    <div id="controls-hint">
+      A/D STEER · S BRAKE · SPACE JUMP<br>
+      SHIFT TUCK · W/S FLIP · Q/E SPIN<br>
+      FLIP+SPIN=CORK · GRFTVB GRABS
+    </div>
+  </div>
+
+  <div id="lobby-screen">
+    <h2>CUSTOMIZE RIDER</h2>
+    <div class="lobby-row">
+      <label>Jacket</label>
+      <div class="color-options" data-part="jacket">
+        <div class="color-swatch selected" style="background:#d32f2f" data-color="0xd32f2f"></div>
+        <div class="color-swatch" style="background:#1565c0" data-color="0x1565c0"></div>
+        <div class="color-swatch" style="background:#2e7d32" data-color="0x2e7d32"></div>
+        <div class="color-swatch" style="background:#f57f17" data-color="0xf57f17"></div>
+        <div class="color-swatch" style="background:#6a1b9a" data-color="0x6a1b9a"></div>
+        <div class="color-swatch" style="background:#212121" data-color="0x212121"></div>
+        <div class="color-swatch" style="background:#ffffff" data-color="0xffffff"></div>
+      </div>
+    </div>
+    <div class="lobby-row">
+      <label>Pants</label>
+      <div class="color-options" data-part="pants">
+        <div class="color-swatch selected" style="background:#263238" data-color="0x263238"></div>
+        <div class="color-swatch" style="background:#1a237e" data-color="0x1a237e"></div>
+        <div class="color-swatch" style="background:#3e2723" data-color="0x3e2723"></div>
+        <div class="color-swatch" style="background:#b71c1c" data-color="0xb71c1c"></div>
+        <div class="color-swatch" style="background:#e0e0e0" data-color="0xe0e0e0"></div>
+        <div class="color-swatch" style="background:#004d40" data-color="0x004d40"></div>
+      </div>
+    </div>
+    <div class="lobby-row">
+      <label>Board</label>
+      <div class="color-options" data-part="board">
+        <div class="color-swatch selected" style="background:#1565c0" data-color="0x1565c0"></div>
+        <div class="color-swatch" style="background:#d32f2f" data-color="0xd32f2f"></div>
+        <div class="color-swatch" style="background:#212121" data-color="0x212121"></div>
+        <div class="color-swatch" style="background:#00bcd4" data-color="0x00bcd4"></div>
+        <div class="color-swatch" style="background:#ff6f00" data-color="0xff6f00"></div>
+        <div class="color-swatch" style="background:#4caf50" data-color="0x4caf50"></div>
+      </div>
+    </div>
+    <div class="lobby-row">
+      <label>Helmet</label>
+      <div class="color-options" data-part="helmet">
+        <div class="color-swatch selected" style="background:#212121" data-color="0x212121"></div>
+        <div class="color-swatch" style="background:#ffffff" data-color="0xffffff"></div>
+        <div class="color-swatch" style="background:#d32f2f" data-color="0xd32f2f"></div>
+        <div class="color-swatch" style="background:#ff9800" data-color="0xff9800"></div>
+        <div class="color-swatch" style="background:#1565c0" data-color="0x1565c0"></div>
+      </div>
+    </div>
+    <button id="lobby-drop-in">DROP IN</button>
+    <div class="lobby-hint">ESC TO RETURN TO LOBBY AFTER CRASHING</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

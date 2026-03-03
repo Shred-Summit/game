@@ -5,22 +5,22 @@ export class Player {
     this.scene = scene;
 
     this.position = new THREE.Vector3(0, 5, 0);
-    this.velocity = new THREE.Vector3(0, 0, -8);
+    this.velocity = new THREE.Vector3(0, 0, -5);
     this.heading = Math.PI; // direction the board faces (radians, PI = down the slope -Z)
     this.visualYaw = Math.PI;
     this.angularVelocity = new THREE.Vector3(0, 0, 0);
 
     this.grounded = false;
     this.airTime = 0;
-    this.maxSpeed = 100;
-    this.gravity = -22;
-    this.jumpForce = 10;
+    this.maxSpeed = 35;  // ~126 km/h — fast but not absurd
+    this.gravity = -25;
+    this.jumpForce = 8;
 
     // Carving system — smooth laid-down carves
     this.turnRate = 0;            // current turning angular velocity (rad/s)
-    this.turnRateMax = 3.5;       // ~200 deg/s — fast carving, not spinning
-    this.turnAccel = 25.0;        // snappy edge engagement
-    this.turnDecel = 15.0;        // quick decay on release
+    this.turnRateMax = 2.3;       // ~130 deg/s — smooth carving
+    this.turnAccel = 16.0;        // snappy edge engagement
+    this.turnDecel = 10.0;        // smooth decay on release
     this.edgeLean = 0;            // visual lean for carving (-1 to 1)
     this.edgeLeanSmooth = 0;      // smoothed lean for rendering
 
@@ -66,9 +66,10 @@ export class Player {
     this.scene.add(this.group);
   }
 
+  // Materials stored for color customization
   buildModel() {
-    const boardMat = new THREE.MeshStandardMaterial({ color: 0x1565c0, roughness: 0.2, metalness: 0.5 });
-    const board = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 1.9), boardMat);
+    this.boardMat = new THREE.MeshStandardMaterial({ color: 0x1565c0, roughness: 0.2, metalness: 0.5 });
+    const board = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 1.9), this.boardMat);
     board.castShadow = true;
 
     const frontPad = new THREE.Mesh(
@@ -85,9 +86,9 @@ export class Player {
     rearPad.position.set(0, 0.005, -0.4);
     board.add(rearPad);
 
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 0.2), boardMat);
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 0.2), this.boardMat);
     nose.position.set(0, 0.04, 0.95); nose.rotation.x = 0.3; board.add(nose);
-    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 0.2), boardMat);
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 0.2), this.boardMat);
     tail.position.set(0, 0.04, -0.95); tail.rotation.x = -0.3; board.add(tail);
 
     const bindMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
@@ -97,8 +98,10 @@ export class Player {
     }
     this.boardGroup.add(board);
 
-    const jacketMat = new THREE.MeshStandardMaterial({ color: 0xd32f2f, roughness: 0.8 });
-    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x263238, roughness: 0.9 });
+    this.jacketMat = new THREE.MeshStandardMaterial({ color: 0xd32f2f, roughness: 0.8 });
+    this.pantsMat = new THREE.MeshStandardMaterial({ color: 0x263238, roughness: 0.9 });
+    const jacketMat = this.jacketMat;
+    const pantsMat = this.pantsMat;
 
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.55, 0.25), jacketMat);
     torso.position.set(0, 0.85, 0); torso.castShadow = true; this.riderGroup.add(torso);
@@ -110,9 +113,10 @@ export class Player {
       new THREE.MeshStandardMaterial({ color: 0xf5c6a0 }));
     head.position.set(0, 1.32, 0); head.castShadow = true; this.riderGroup.add(head);
 
+    this.helmetMat = new THREE.MeshStandardMaterial({ color: 0x212121 });
     const helmet = new THREE.Mesh(
       new THREE.SphereGeometry(0.19, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.55),
-      new THREE.MeshStandardMaterial({ color: 0x212121 }));
+      this.helmetMat);
     helmet.position.set(0, 1.36, 0); this.riderGroup.add(helmet);
 
     const goggles = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.07, 0.08),
@@ -188,11 +192,17 @@ export class Player {
         }
       }
 
+      // Fall damage — huge drops crash the player
+      if (this.velocity.y < -35) {
+        this.triggerCrash();
+        return this.getState(terrain);
+      }
+
       // Slope-aware landing: convert some downward speed to forward speed
       if (this.velocity.y < 0) {
         const normal = terrain.getSlopeNormalAt(this.position.x, this.position.z);
         const downSpeed = -this.velocity.y;
-        this.velocity.z -= (1.0 - normal.y) * downSpeed * 0.4;
+        this.velocity.z -= (1.0 - normal.y) * downSpeed * 0.3;
         this.velocity.y = 0;
       }
 
@@ -226,8 +236,8 @@ export class Player {
       // ===== GROUND MOVEMENT (CARVING SYSTEM) =====
       const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
 
-      // Auto-accelerate downhill (faster base speed)
-      let slopeAccel = this.isTucking ? 30 : 22;
+      // Auto-accelerate downhill
+      let slopeAccel = this.isTucking ? 16 : 11;
 
       // S = brake on ground (NOT flip — that's air only)
       if (input.brake && !wasInAir) {
@@ -284,13 +294,13 @@ export class Player {
       // Carving: turning at speed creates a slight speed scrub (edge friction)
       const carveFriction = 1.0 - Math.abs(this.turnRate) * 0.012;
 
-      // Standard friction — less friction = faster feel
+      // Standard friction
       let frictionMul;
       if (input.brake) {
-        frictionMul = 0.96;
-        this.turnRate *= 0.92;
+        frictionMul = 0.94;
+        this.turnRate *= 0.90;
       } else {
-        frictionMul = this.isTucking ? 0.9995 : 0.998;
+        frictionMul = this.isTucking ? 0.998 : 0.995;
       }
       this.velocity.x *= frictionMul * carveFriction;
       this.velocity.z *= frictionMul * carveFriction;
@@ -571,20 +581,24 @@ export class Player {
 
     // Player has passed the lip — launch!
     if (t >= 0.95) {
-      const speed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+      const rawSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+      // Cap effective launch speed so kickers don't send you to orbit
+      const speed = Math.min(rawSpeed, 25);
 
       // Launch angle based on jump size (bigger = steeper lip)
       const lipAngle = ramp.lipAngle || 0.55;
 
       // Redirect velocity through the lip angle
-      const launchSpeed = speed * 0.93;
+      const launchSpeed = speed * 0.85;
       this.velocity.y = Math.sin(lipAngle) * launchSpeed;
       const horizFactor = Math.cos(lipAngle);
-      this.velocity.x *= horizFactor;
-      this.velocity.z *= horizFactor;
+      // Preserve horizontal speed but reduce it
+      const hScale = horizFactor * Math.min(1, 25 / Math.max(rawSpeed, 1));
+      this.velocity.x *= hScale;
+      this.velocity.z *= hScale;
 
-      // Small pop bonus based on approach speed
-      this.velocity.y += Math.min(speed * 0.06, 3);
+      // Small pop bonus
+      this.velocity.y += Math.min(speed * 0.04, 2);
 
       // Apply ollie pop boost if player pressed space on the kicker
       if (this.kickerPopBoost > 0) {
@@ -659,6 +673,16 @@ export class Player {
     this.riderGroup.position.y = THREE.MathUtils.lerp(this.riderGroup.position.y, -0.2, 0.15);
   }
 
+  setColor(part, colorHex) {
+    const color = new THREE.Color(colorHex);
+    switch (part) {
+      case 'jacket': this.jacketMat.color.copy(color); break;
+      case 'pants': this.pantsMat.color.copy(color); break;
+      case 'board': this.boardMat.color.copy(color); break;
+      case 'helmet': this.helmetMat.color.copy(color); break;
+    }
+  }
+
   triggerCrash() {
     this.crashed = true;
     this.crashTimer = 0;
@@ -675,7 +699,7 @@ export class Player {
     this.crashTimer = 0;
     this.position.copy(checkpointPos);
     this.position.y += 2;
-    this.velocity.set(0, 0, -10);
+    this.velocity.set(0, 0, -5);
     this.heading = Math.PI;
     this.visualYaw = Math.PI;
     this.angularVelocity.set(0, 0, 0);
