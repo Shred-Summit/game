@@ -272,6 +272,25 @@
     }
     .color-swatch:hover { transform: scale(1.15); }
     .color-swatch.selected { border-color: #fff; transform: scale(1.15); }
+    .equipment-options { display: flex; gap: 8px; }
+    .equipment-btn {
+      padding: 8px 18px;
+      background: rgba(255,255,255,0.1);
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 8px;
+      color: rgba(255,255,255,0.7);
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 16px;
+      letter-spacing: 2px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .equipment-btn:hover { background: rgba(255,255,255,0.2); }
+    .equipment-btn.selected {
+      background: rgba(255,255,255,0.25);
+      border-color: #fff;
+      color: #fff;
+    }
     #lobby-drop-in {
       margin-top: 30px;
       padding: 14px 50px;
@@ -1072,6 +1091,13 @@
 
   <div id="lobby-screen">
     <h2>CUSTOMIZE RIDER</h2>
+    <div class="lobby-row">
+      <label>Equipment</label>
+      <div class="equipment-options">
+        <button class="equipment-btn selected" data-equipment="snowboard">SNOWBOARD</button>
+        <button class="equipment-btn" data-equipment="ski">SKIS</button>
+      </div>
+    </div>
     <div class="lobby-row">
       <label>Jacket</label>
       <div class="color-options" data-part="jacket">

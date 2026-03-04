@@ -28,7 +28,8 @@ export class Game {
     this.initLights();
 
     this.terrain = new Terrain(this.scene);
-    this.player = new Player(this.scene);
+    this.selectedEquipment = 'snowboard';
+    this.player = new Player(this.scene, this.selectedEquipment);
     this.tricks = new TrickSystem();
     this.particles = new SnowParticles(this.scene);
 
@@ -257,6 +258,38 @@ export class Game {
           const colorVal = parseInt(swatch.dataset.color);
           this.player.setColor(part, colorVal);
         });
+      });
+    });
+
+    // Equipment toggle (snowboard / skis)
+    document.querySelectorAll('.equipment-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.equipment-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        const newType = btn.dataset.equipment;
+        if (newType !== this.selectedEquipment) {
+          this.selectedEquipment = newType;
+          // Save current colors from lobby swatches
+          const savedColors = {};
+          document.querySelectorAll('.color-options').forEach(group => {
+            const part = group.dataset.part;
+            const sel = group.querySelector('.color-swatch.selected');
+            if (sel) savedColors[part] = parseInt(sel.dataset.color);
+          });
+          // Rebuild player with new equipment
+          this.scene.remove(this.player.group);
+          this.player = new Player(this.scene, this.selectedEquipment);
+          // Re-apply saved colors
+          for (const [part, color] of Object.entries(savedColors)) {
+            this.player.setColor(part, color);
+          }
+          // Update "Board"/"Skis" label
+          const boardRow = document.querySelector('[data-part="board"]');
+          if (boardRow) {
+            boardRow.closest('.lobby-row').querySelector('label').textContent =
+              this.selectedEquipment === 'ski' ? 'Skis' : 'Board';
+          }
+        }
       });
     });
 

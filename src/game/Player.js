@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 
 export class Player {
-  constructor(scene) {
+  constructor(scene, equipmentType = 'snowboard') {
     this.scene = scene;
+    this.equipmentType = equipmentType;
 
     this.position = new THREE.Vector3(0, 5, 0);
     this.velocity = new THREE.Vector3(0, 0, -5);
@@ -63,8 +64,9 @@ export class Player {
     this.capsuleRadius = 0.4;
     this.capsuleHalfH = 0.8;
 
-    // Sideways stance
-    this.STANCE_YAW = 1.3; // 75° sideways (regular stance)
+    // Stance depends on equipment
+    this.STANCE_YAW = this.equipmentType === 'ski' ? 0 : 1.3;
+    this.HEAD_YAW = this.equipmentType === 'ski' ? 0 : -0.6;
 
     // Landing impact spring system
     this.landingImpact = 0;
@@ -85,36 +87,15 @@ export class Player {
   // Materials stored for color customization
   buildModel() {
     this.boardMat = new THREE.MeshStandardMaterial({ color: 0x1565c0, roughness: 0.2, metalness: 0.5 });
-    const board = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 1.9), this.boardMat);
-    board.castShadow = true;
 
-    const frontPad = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 0.065, 0.35),
-      new THREE.MeshStandardMaterial({ color: 0xff5722 })
-    );
-    frontPad.position.set(0, 0.005, 0.3);
-    board.add(frontPad);
-
-    const rearPad = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 0.065, 0.2),
-      new THREE.MeshStandardMaterial({ color: 0xffc107 })
-    );
-    rearPad.position.set(0, 0.005, -0.4);
-    board.add(rearPad);
-
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 0.2), this.boardMat);
-    nose.position.set(0, 0.04, 0.95); nose.rotation.x = 0.3; board.add(nose);
-    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 0.2), this.boardMat);
-    tail.position.set(0, 0.04, -0.95); tail.rotation.x = -0.3; board.add(tail);
-
-    const bindMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
-    for (const z of [0.35, -0.3]) {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.18), bindMat);
-      b.position.set(0, 0.06, z); board.add(b);
+    // Build equipment based on type
+    if (this.equipmentType === 'ski') {
+      this.buildSkis();
+    } else {
+      this.buildSnowboard();
     }
-    this.boardGroup.add(board);
 
-    // === RIDER (sideways stance) ===
+    // === RIDER ===
     this.jacketMat = new THREE.MeshStandardMaterial({ color: 0xd32f2f, roughness: 0.8 });
     this.pantsMat = new THREE.MeshStandardMaterial({ color: 0x263238, roughness: 0.9 });
     const jacketMat = this.jacketMat;
@@ -123,7 +104,7 @@ export class Player {
     this.gloveMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
     this.bootMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
 
-    // Sideways stance
+    // Stance rotation
     this.riderGroup.rotation.y = this.STANCE_YAW;
 
     // Hips
@@ -134,13 +115,13 @@ export class Player {
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.25), jacketMat);
     torso.position.set(0, 0.85, 0); torso.castShadow = true; this.riderGroup.add(torso);
 
-    // Neck + Head (counter-rotated to look downhill)
+    // Neck + Head
     this.neckGroup = new THREE.Group();
     this.neckGroup.position.set(0, 1.15, 0);
     this.riderGroup.add(this.neckGroup);
 
     this.headGroup = new THREE.Group();
-    this.headGroup.rotation.y = -0.6; // counter-rotate to look downhill
+    this.headGroup.rotation.y = this.HEAD_YAW;
     this.neckGroup.add(this.headGroup);
 
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6), skinMat);
@@ -156,22 +137,20 @@ export class Player {
       new THREE.MeshStandardMaterial({ color: 0xff9800, metalness: 0.7, roughness: 0.1 }));
     goggles.position.set(0, 0.17, 0.14); this.headGroup.add(goggles);
 
-    // === SEGMENTED ARMS (longer, wider shoulders, meshes centered below pivots) ===
+    // === SEGMENTED ARMS ===
     // Left arm: shoulderL → upperArmL → elbowL → forearmL → gloveL
     this.shoulderL = new THREE.Group();
     this.shoulderL.position.set(-0.3, 1.05, 0);
     this.riderGroup.add(this.shoulderL);
 
-    // upperArm: capsule h=0.24 + 2*r=0.12 = total 0.36, center at -0.18 so top = pivot
     const upperArmL = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.24, 4, 6), jacketMat);
     upperArmL.position.set(0, -0.18, 0); upperArmL.castShadow = true;
     this.shoulderL.add(upperArmL);
 
     this.elbowL = new THREE.Group();
-    this.elbowL.position.set(0, -0.36, 0); // bottom of upper arm
+    this.elbowL.position.set(0, -0.36, 0);
     this.shoulderL.add(this.elbowL);
 
-    // forearm: capsule h=0.22 + 2*r=0.11 = total 0.33, center at -0.165
     const forearmL = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.22, 4, 6), jacketMat);
     forearmL.position.set(0, -0.165, 0); forearmL.castShadow = true;
     this.elbowL.add(forearmL);
@@ -201,19 +180,33 @@ export class Player {
     gloveR.position.set(0, -0.33, 0);
     this.elbowR.add(gloveR);
 
-    // Default arm pose: arms hang DOWN, angled outward from body
-    this.shoulderL.rotation.z = 0.4;
-    this.shoulderL.rotation.x = 0.3; // pushes arms forward (= sideways in world due to stance)
-    this.elbowL.rotation.x = -0.3;
+    // Default arm pose
+    if (this.equipmentType === 'ski') {
+      this.shoulderL.rotation.z = 0.3;
+      this.shoulderL.rotation.x = 0.4;
+      this.elbowL.rotation.x = -0.4;
+      this.shoulderR.rotation.z = -0.3;
+      this.shoulderR.rotation.x = 0.4;
+      this.elbowR.rotation.x = -0.4;
+    } else {
+      this.shoulderL.rotation.z = 0.4;
+      this.shoulderL.rotation.x = 0.3;
+      this.elbowL.rotation.x = -0.3;
+      this.shoulderR.rotation.z = -0.4;
+      this.shoulderR.rotation.x = 0.3;
+      this.elbowR.rotation.x = -0.3;
+    }
 
-    this.shoulderR.rotation.z = -0.4;
-    this.shoulderR.rotation.x = 0.3;
-    this.elbowR.rotation.x = -0.3;
+    // Ski poles (attached to forearms)
+    if (this.equipmentType === 'ski') {
+      this.buildPoles();
+    }
 
     // === SEGMENTED LEGS ===
-    // Left leg (front foot): hipL → thighL → kneeL → calfL → bootL
+    const isSki = this.equipmentType === 'ski';
+    // Left leg: hipL → thighL → kneeL → calfL → bootL
     this.hipL = new THREE.Group();
-    this.hipL.position.set(-0.1, 0.48, 0.08);
+    this.hipL.position.set(isSki ? -0.12 : -0.1, 0.48, isSki ? 0 : 0.08);
     this.riderGroup.add(this.hipL);
 
     const thighL = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.16, 3, 6), pantsMat);
@@ -232,9 +225,9 @@ export class Player {
     bootL.position.set(0, -0.22, 0.03);
     this.kneeL.add(bootL);
 
-    // Right leg (rear foot): hipR → thighR → kneeR → calfR → bootR
+    // Right leg: hipR → thighR → kneeR → calfR → bootR
     this.hipR = new THREE.Group();
-    this.hipR.position.set(0.1, 0.48, -0.08);
+    this.hipR.position.set(isSki ? 0.12 : 0.1, 0.48, isSki ? 0 : -0.08);
     this.riderGroup.add(this.hipR);
 
     const thighR = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.16, 3, 6), pantsMat);
@@ -261,6 +254,88 @@ export class Player {
 
     this.boardGroup.add(this.riderGroup);
     this.group.add(this.boardGroup);
+  }
+
+  buildSnowboard() {
+    const board = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 1.9), this.boardMat);
+    board.castShadow = true;
+
+    const frontPad = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 0.065, 0.35),
+      new THREE.MeshStandardMaterial({ color: 0xff5722 })
+    );
+    frontPad.position.set(0, 0.005, 0.3);
+    board.add(frontPad);
+
+    const rearPad = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 0.065, 0.2),
+      new THREE.MeshStandardMaterial({ color: 0xffc107 })
+    );
+    rearPad.position.set(0, 0.005, -0.4);
+    board.add(rearPad);
+
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 0.2), this.boardMat);
+    nose.position.set(0, 0.04, 0.95); nose.rotation.x = 0.3; board.add(nose);
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 0.2), this.boardMat);
+    tail.position.set(0, 0.04, -0.95); tail.rotation.x = -0.3; board.add(tail);
+
+    const bindMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+    for (const z of [0.35, -0.3]) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.18), bindMat);
+      b.position.set(0, 0.06, z); board.add(b);
+    }
+    this.boardGroup.add(board);
+  }
+
+  buildSkis() {
+    const bindMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+
+    for (const side of [-1, 1]) {
+      const ski = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.035, 1.7), this.boardMat);
+      ski.position.set(side * 0.14, 0, 0);
+      ski.castShadow = true;
+
+      // Nose and tail tips
+      const nose = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.025, 0.15), this.boardMat);
+      nose.position.set(0, 0.03, 0.85); nose.rotation.x = 0.35; ski.add(nose);
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.025, 0.12), this.boardMat);
+      tail.position.set(0, 0.025, -0.85); tail.rotation.x = -0.3; ski.add(tail);
+
+      // One binding per ski
+      const bind = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.16), bindMat);
+      bind.position.set(0, 0.05, 0.05); ski.add(bind);
+
+      this.boardGroup.add(ski);
+    }
+  }
+
+  buildPoles() {
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.6, roughness: 0.3 });
+    const gripMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+    const basketMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.7 });
+
+    for (const elbow of [this.elbowL, this.elbowR]) {
+      const poleGroup = new THREE.Group();
+      poleGroup.position.set(0, -0.25, 0);
+      poleGroup.rotation.x = 0.3; // slight forward tilt
+
+      // Shaft
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.01, 0.9, 6), poleMat);
+      shaft.position.set(0, -0.45, 0);
+      poleGroup.add(shaft);
+
+      // Grip at top
+      const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.015, 0.1, 6), gripMat);
+      grip.position.set(0, 0, 0);
+      poleGroup.add(grip);
+
+      // Basket near bottom
+      const basket = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.01, 8), basketMat);
+      basket.position.set(0, -0.85, 0);
+      poleGroup.add(basket);
+
+      elbow.add(poleGroup);
+    }
   }
 
   resetJointsToRiding(speed) {
@@ -1168,15 +1243,22 @@ export class Player {
     this.riderGroup.rotation.set(0, this.STANCE_YAW, 0);
 
     // Reset all joints to default riding pose
-    this.shoulderL.rotation.set(0.3, 0, 0.4);
-    this.elbowL.rotation.set(-0.3, 0, 0);
-    this.shoulderR.rotation.set(0.3, 0, -0.4);
-    this.elbowR.rotation.set(-0.3, 0, 0);
+    if (this.equipmentType === 'ski') {
+      this.shoulderL.rotation.set(0.4, 0, 0.3);
+      this.elbowL.rotation.set(-0.4, 0, 0);
+      this.shoulderR.rotation.set(0.4, 0, -0.3);
+      this.elbowR.rotation.set(-0.4, 0, 0);
+    } else {
+      this.shoulderL.rotation.set(0.3, 0, 0.4);
+      this.elbowL.rotation.set(-0.3, 0, 0);
+      this.shoulderR.rotation.set(0.3, 0, -0.4);
+      this.elbowR.rotation.set(-0.3, 0, 0);
+    }
     this.hipL.rotation.set(-0.3, 0, 0);
     this.kneeL.rotation.set(0.6, 0, 0);
     this.hipR.rotation.set(-0.3, 0, 0);
     this.kneeR.rotation.set(0.6, 0, 0);
-    this.headGroup.rotation.set(0, -0.6, 0);
+    this.headGroup.rotation.set(0, this.HEAD_YAW, 0);
 
     this.group.position.copy(this.position);
     this.group.rotation.set(0, Math.PI, 0);
