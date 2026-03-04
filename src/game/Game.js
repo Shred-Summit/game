@@ -242,7 +242,7 @@ export class Game {
     const halfWidth = 0.2;
     const perpX = Math.cos(heading) * halfWidth;
     const perpZ = -Math.sin(heading) * halfWidth;
-    const y = pos.y - 0.3; // just above snow surface
+    const y = pos.y - 0.06; // just above snow surface
 
     const positions = this.trailMesh.geometry.attributes.position;
     const i = this.trailIndex;

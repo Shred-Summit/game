@@ -16,6 +16,11 @@ export class TrickSystem {
     this.wasAirborne = false;
     this.isCork = false; // did this jump include a cork?
 
+    // Rail grind tracking
+    this.wasGrinding = false;
+    this.lastBoardslideType = null;
+    this.grindAccumulatedTime = 0;
+
     // Catchphrase system
     this.lastCatchphrase = '';
     this.lastCatchphraseTime = 0;
@@ -137,6 +142,21 @@ export class TrickSystem {
       }
     }
 
+    // Track rail grind state
+    if (playerState.grinding) {
+      this.wasGrinding = true;
+      this.grindAccumulatedTime = playerState.grindTime;
+      if (playerState.boardslideType) {
+        this.lastBoardslideType = playerState.boardslideType;
+      }
+    }
+
+    // Score rail trick when grind ends
+    if (!playerState.grinding && this.wasGrinding && !playerState.crashed) {
+      this.scoreRailTrick(playerState);
+      this.wasGrinding = false;
+    }
+
     if (playerState.grounded && !playerState.wasGrounded && this.wasAirborne) {
       this.scoreTrick(playerState);
       this.wasAirborne = false;
@@ -232,6 +252,47 @@ export class TrickSystem {
     this.grabTypes.clear();
     this.currentGrabType = null;
     this.isCork = false;
+  }
+
+  scoreRailTrick(playerState) {
+    const tricks = [];
+    let trickScore = 0;
+
+    // Only score if grind lasted long enough
+    if (this.grindAccumulatedTime > 0.3) {
+      if (this.lastBoardslideType === 'frontside') {
+        tricks.push('FRONTSIDE BOARDSLIDE');
+        trickScore += 200 + Math.floor(this.grindAccumulatedTime * 100);
+      } else if (this.lastBoardslideType === 'backside') {
+        tricks.push('BACKSIDE BOARDSLIDE');
+        trickScore += 200 + Math.floor(this.grindAccumulatedTime * 100);
+      } else {
+        tricks.push('50-50 GRIND');
+        trickScore += 100 + Math.floor(this.grindAccumulatedTime * 75);
+      }
+
+      // Long grind bonus
+      if (this.grindAccumulatedTime > 2.0) {
+        trickScore += Math.floor((this.grindAccumulatedTime - 2.0) * 150);
+      }
+    }
+
+    if (tricks.length > 0 && trickScore > 0) {
+      trickScore = Math.floor(trickScore * this.comboMultiplier);
+      this.totalScore += trickScore;
+      this.lastTrickName = tricks.join(' + ');
+      this.lastTrickPoints = trickScore;
+      this.lastTrickTime = performance.now();
+
+      this.lastCatchphrase = this.pickCatchphrase(trickScore);
+      this.lastCatchphraseTime = performance.now();
+
+      this.comboMultiplier = Math.min(this.comboMultiplier + 0.5, 5.0);
+      this.comboTimer = this.comboDuration;
+    }
+
+    this.lastBoardslideType = null;
+    this.grindAccumulatedTime = 0;
   }
 
   pickCatchphrase(score) {

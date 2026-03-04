@@ -41,6 +41,10 @@ export class Player {
     // Rail grind state
     this.grinding = false;
     this.grindRail = null;
+    this.boardslideType = null;   // null, 'frontside', 'backside'
+    this.boardslideAngle = 0;     // visual rotation for boardslide
+    this.grindTime = 0;           // how long current grind has lasted
+    this.wasGrinding = false;
 
     // Cork tracking
     this.isCorkingThisJump = false;
@@ -52,7 +56,7 @@ export class Player {
     // Crash
     this.crashed = false;
     this.crashTimer = 0;
-    this.landingTolerance = Math.PI * 0.42;
+    this.landingTolerance = Math.PI * (35 / 180); // 35 degrees — clean landings only
 
     // Capsule hitbox: center = position, radius, half-height
     this.capsuleRadius = 0.4;
@@ -144,9 +148,10 @@ export class Player {
     if (this.crashed) return this.getState(terrain);
 
     this.wasGrounded = this.grounded;
+    this.wasGrinding = this.grinding;
     this.isTucking = input.tuck;
 
-    const groundOffset = 0.35; // keep board visually above snow
+    const groundOffset = 0.08; // board rests on snow
 
     // Tick kicker cooldown
     this.kickerCooldown = Math.max(0, this.kickerCooldown - dt);
@@ -173,20 +178,26 @@ export class Player {
     if (nextY <= surfaceH + groundOffset) {
       this.position.y = surfaceH + groundOffset;
 
-      // Crash check on landing — must land roughly upright
+      // Crash check on landing — must land within 35° of clean rotation
       if (wasInAir && this.airTime > 0.4) {
-        // Check flip axis (forward/back rotation)
+        // Check flip axis (forward/back) — must be near a full 360° rotation
         const rawFlip = this.trickRotation.x;
-        const fullFlipRots = Math.round(rawFlip / (Math.PI * 2));
-        const flipRemainder = rawFlip - fullFlipRots * Math.PI * 2;
+        const nearestFlipRot = Math.round(rawFlip / (Math.PI * 2)) * Math.PI * 2;
+        const flipRemainder = Math.abs(rawFlip - nearestFlipRot);
 
-        // Check roll axis (sideways tilt from corks)
+        // Check spin axis (Y rotation) — must be near a 180° increment
+        const rawSpin = this.trickRotation.y;
+        const nearestSpinRot = Math.round(rawSpin / Math.PI) * Math.PI;
+        const spinRemainder = Math.abs(rawSpin - nearestSpinRot);
+
+        // Check roll axis (sideways tilt from corks) — must be near a full 360°
         const rawRoll = this.trickRotation.z;
-        const fullRollRots = Math.round(rawRoll / (Math.PI * 2));
-        const rollRemainder = rawRoll - fullRollRots * Math.PI * 2;
+        const nearestRollRot = Math.round(rawRoll / (Math.PI * 2)) * Math.PI * 2;
+        const rollRemainder = Math.abs(rawRoll - nearestRollRot);
 
-        if (Math.abs(flipRemainder) > this.landingTolerance ||
-            Math.abs(rollRemainder) > this.landingTolerance) {
+        if (flipRemainder > this.landingTolerance ||
+            spinRemainder > this.landingTolerance ||
+            rollRemainder > this.landingTolerance) {
           this.triggerCrash();
           return this.getState(terrain);
         }
@@ -207,7 +218,11 @@ export class Player {
       }
 
       if (!this.grounded) {
-        // Just landed — sync heading to actual velocity direction
+        // Just landed — snap board rotation clean and sync heading
+        this.trickRotation.set(0, 0, 0);
+        this.angularVelocity.set(0, 0, 0);
+        this.boardGroup.rotation.set(0, 0, 0);
+
         const landingHeading = Math.atan2(this.velocity.x, this.velocity.z);
         this.heading = landingHeading;
         this.peakHeight = Math.max(this.peakHeight, this.currentHeightAboveGround);
@@ -343,6 +358,10 @@ export class Player {
       this.boardGroup.rotation.x = THREE.MathUtils.lerp(
         this.boardGroup.rotation.x, Math.abs(this.edgeLeanSmooth) * 0.15, 0.15
       );
+      // Snap board Y rotation back to neutral (prevents residual spin drift)
+      this.boardGroup.rotation.y = THREE.MathUtils.lerp(
+        this.boardGroup.rotation.y, 0, 0.25
+      );
 
       if (this.isTucking) {
         this.riderGroup.position.y = THREE.MathUtils.lerp(this.riderGroup.position.y, -0.15, 0.12);
@@ -358,30 +377,76 @@ export class Player {
 
     } else if (this.grinding) {
       // ===== RAIL GRIND =====
-      // Maintain forward speed, slight friction, can still spin
-      this.velocity.y = 0;
-      this.velocity.multiplyScalar(0.998);
+      // Check if player has passed the end of the rail
+      let railEnded = false;
+      if (this.grindRail) {
+        const dz = this.position.z - this.grindRail.position.z;
+        if (Math.abs(dz) > this.grindRail.length / 2 + 0.5) {
+          railEnded = true;
+          this.grinding = false;
+          this.grindRail = null;
+          this.grounded = false;
+          this.peakHeight = 0;
+        }
+      }
 
-      // A/D for balance wobble (cosmetic)
-      this.boardGroup.rotation.z = THREE.MathUtils.lerp(
-        this.boardGroup.rotation.z, input.steer * 0.2, 0.1
-      );
+      if (!railEnded && this.grinding) {
+        // Lock X position to rail center (smooth lerp so it feels natural)
+        const railX = this.grindRail.position.x;
+        this.position.x = THREE.MathUtils.lerp(this.position.x, railX, 0.15);
+        this.velocity.x *= 0.8; // dampen lateral drift
 
-      // Can do spins while grinding
-      if (input.spinLeft) this.angularVelocity.y = 4.0;
-      else if (input.spinRight) this.angularVelocity.y = -4.0;
+        // Lock Y to rail surface height
+        const railTop = this.grindRail.position.y + this.grindRail.surfaceHeight;
+        this.position.y = railTop + 0.2;
+        this.velocity.y = 0;
 
-      this.trickRotation.y += this.angularVelocity.y * dt;
-      this.angularVelocity.multiplyScalar(0.95);
-      this.boardGroup.rotation.y = this.trickRotation.y;
+        // Maintain forward speed, slight friction
+        this.velocity.multiplyScalar(0.998);
 
-      // Jump off rail
-      if (input.jump) {
-        this.velocity.y = this.jumpForce * 0.7;
-        this.grinding = false;
-        this.grindRail = null;
-        this.grounded = false;
-        this.peakHeight = 0;
+        // Track grind duration
+        this.grindTime += dt;
+
+        // A/D for boardslide tricks while grinding
+        if (input.steer > 0) {
+          // D key = frontside boardslide
+          this.boardslideType = 'frontside';
+          this.boardslideAngle = THREE.MathUtils.lerp(this.boardslideAngle, Math.PI / 2, 0.15);
+        } else if (input.steer < 0) {
+          // A key = backside boardslide
+          this.boardslideType = 'backside';
+          this.boardslideAngle = THREE.MathUtils.lerp(this.boardslideAngle, -Math.PI / 2, 0.15);
+        } else {
+          // No A/D = regular 50-50 grind
+          this.boardslideType = null;
+          this.boardslideAngle = THREE.MathUtils.lerp(this.boardslideAngle, 0, 0.15);
+        }
+
+        // Slight body lean during boardslide
+        this.boardGroup.rotation.z = THREE.MathUtils.lerp(
+          this.boardGroup.rotation.z,
+          this.boardslideType ? Math.sign(this.boardslideAngle) * 0.15 : 0,
+          0.1
+        );
+
+        // Can do spins while grinding (Q/E)
+        if (input.spinLeft) this.angularVelocity.y = 4.0;
+        else if (input.spinRight) this.angularVelocity.y = -4.0;
+
+        this.trickRotation.y += this.angularVelocity.y * dt;
+        this.angularVelocity.multiplyScalar(0.95);
+
+        // Combine spin rotation with boardslide angle
+        this.boardGroup.rotation.y = this.trickRotation.y + this.boardslideAngle;
+
+        // Jump off rail
+        if (input.jump) {
+          this.velocity.y = this.jumpForce * 0.7;
+          this.grinding = false;
+          this.grindRail = null;
+          this.grounded = false;
+          this.peakHeight = 0;
+        }
       }
 
     } else {
@@ -489,6 +554,12 @@ export class Player {
     // ===== MOVE =====
     this.position.add(this.velocity.clone().multiplyScalar(dt));
 
+    // Snap to terrain after movement when grounded (prevents 1-frame float/clip)
+    if (this.grounded && !this.grinding) {
+      const newSurfaceH = this.getSurfaceHeight(terrain);
+      this.position.y = newSurfaceH + groundOffset;
+    }
+
     // Hard floor clamp (absolute safety net)
     const floorH = terrain.getHeightAt(this.position.x, this.position.z);
     if (this.position.y < floorH + groundOffset) {
@@ -549,14 +620,16 @@ export class Player {
       const dx = this.position.x - ramp.position.x;
       const dz = this.position.z - ramp.position.z;
 
-      if (Math.abs(dx) < ramp.width && Math.abs(dz) < ramp.length) {
-        // Player is within the kicker footprint
+      const halfW = ramp.width / 2;
+      const halfL = ramp.length / 2;
+      if (Math.abs(dx) < halfW && Math.abs(dz) < halfL) {
+        // Player is within the kicker footprint (matches visual mesh extents)
         // t = 0 at entry (positive Z side), t = 1 at lip (negative Z side)
-        const t = 1.0 - (dz + ramp.length) / (ramp.length * 2);
+        const t = 1.0 - (dz + halfL) / ramp.length;
         const clampedT = Math.max(0, Math.min(1, t));
 
-        // Ramp surface: smooth curve from 0 to lipHeight
-        const rampH = ramp.lipHeight * Math.sin(clampedT * Math.PI * 0.5);
+        // Ramp surface: power curve matching the visual mesh profile
+        const rampH = ramp.lipHeight * Math.pow(clampedT, 0.65);
         kickerBoost = Math.max(kickerBoost, rampH);
 
         if (this.grounded && clampedT > 0.1) {
@@ -577,7 +650,8 @@ export class Player {
 
     const ramp = this.onKicker;
     const dz = this.position.z - ramp.position.z;
-    const t = 1.0 - (dz + ramp.length) / (ramp.length * 2);
+    const halfL = ramp.length / 2;
+    const t = 1.0 - (dz + halfL) / ramp.length;
 
     // Player has passed the lip — launch!
     if (t >= 0.95) {
@@ -615,27 +689,45 @@ export class Player {
 
   // ===== RAIL GRIND =====
   updateRailGrind(terrain, dt) {
-    if (this.grounded || this.grinding) return;
-    if (this.velocity.y > 0) return; // only grind when descending
+    if (this.grinding) return;
 
     for (const ramp of terrain.ramps) {
       if (ramp.type !== 'rail') continue;
 
       const dx = this.position.x - ramp.position.x;
       const dz = this.position.z - ramp.position.z;
-      const dy = this.position.y - (ramp.position.y + ramp.surfaceHeight);
+      const railTop = ramp.position.y + ramp.surfaceHeight;
+      const dy = this.position.y - railTop;
 
-      // Check if player is close enough to rail in all axes
+      // Check if player is within rail XZ footprint
       if (Math.abs(dx) < ramp.width + this.capsuleRadius &&
-          Math.abs(dz) < ramp.length / 2 + 0.5 &&
-          dy > -0.3 && dy < 1.5) {
-        // Snap onto rail
-        this.position.y = ramp.position.y + ramp.surfaceHeight + 0.2;
-        this.velocity.y = 0;
-        this.grinding = true;
-        this.grindRail = ramp;
-        this.peakHeight = 0;
-        break;
+          Math.abs(dz) < ramp.length / 2 + 0.5) {
+
+        if (this.grounded && dy < 0.5) {
+          // Grounded player hitting rail — auto-hop onto it
+          this.position.y = railTop + 0.2;
+          this.velocity.y = 0;
+          this.grinding = true;
+          this.grindRail = ramp;
+          this.grounded = false;
+          this.peakHeight = 0;
+          this.grindTime = 0;
+          this.boardslideType = null;
+          this.boardslideAngle = 0;
+          break;
+        } else if (!this.grounded && this.velocity.y <= 0 &&
+                   dy > -0.3 && dy < 1.5) {
+          // Airborne descending player — snap onto rail
+          this.position.y = railTop + 0.2;
+          this.velocity.y = 0;
+          this.grinding = true;
+          this.grindRail = ramp;
+          this.peakHeight = 0;
+          this.grindTime = 0;
+          this.boardslideType = null;
+          this.boardslideAngle = 0;
+          break;
+        }
       }
     }
   }
@@ -719,6 +811,9 @@ export class Player {
     this.onKicker = null;
     this.grinding = false;
     this.grindRail = null;
+    this.boardslideType = null;
+    this.boardslideAngle = 0;
+    this.grindTime = 0;
 
     this.boardGroup.rotation.set(0, 0, 0);
     this.riderGroup.position.set(0, 0, 0);
@@ -730,7 +825,7 @@ export class Player {
 
   getState(terrain) {
     const terrainH = terrain ? terrain.getHeightAt(this.position.x, this.position.z) : 0;
-    const heightAbove = Math.max(0, this.position.y - terrainH - 0.35);
+    const heightAbove = Math.max(0, this.position.y - terrainH - 0.08);
     const heightFeet = Math.round(heightAbove * 3.28);
     const peakFeet = Math.round(this.peakHeight * 3.28);
 
@@ -748,6 +843,9 @@ export class Player {
       peakHeightFeet: peakFeet,
       isAirborne: !this.grounded && !this.grinding && this.airTime > 0.1,
       grinding: this.grinding,
+      wasGrinding: this.wasGrinding,
+      boardslideType: this.boardslideType,
+      grindTime: this.grindTime,
       isCork: this.isCorkingThisJump,
     };
   }
