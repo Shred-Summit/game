@@ -3,13 +3,16 @@ export class InputManager {
     this.keys = {};
     this.justPressed = {};
     this._previousKeys = {};
+    this.disabled = false; // Set true to let text inputs work (nickname prompt)
 
     window.addEventListener('keydown', (e) => {
+      if (this.disabled) return;
       this.keys[e.code] = true;
       e.preventDefault();
     });
 
     window.addEventListener('keyup', (e) => {
+      if (this.disabled) return;
       this.keys[e.code] = false;
       e.preventDefault();
     });

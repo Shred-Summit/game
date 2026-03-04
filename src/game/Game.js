@@ -4,11 +4,13 @@ import { Terrain } from './Terrain.js';
 import { TrickSystem } from './TrickSystem.js';
 import { InputManager } from './InputManager.js';
 import { SnowParticles } from './Particles.js';
+import { initFirebase, submitScore, fetchWorldwideScores, getWeekId } from './firebase.js';
+import { NicknameManager } from './NicknameManager.js';
 
 export class Game {
   constructor() {
     this.started = false;
-    this.state = 'start'; // 'start', 'playing', 'dead'
+    this.state = 'start'; // 'start', 'playing', 'dead', 'finished'
     this.clock = new THREE.Clock();
     this.input = new InputManager();
 
@@ -62,7 +64,33 @@ export class Game {
       checkpointAlert: document.getElementById('checkpoint-alert'),
       lobbyScreen: document.getElementById('lobby-screen'),
       lobbyDropIn: document.getElementById('lobby-drop-in'),
+      finishScreen: document.getElementById('finish-screen'),
+      finishScore: document.getElementById('finish-score'),
+      finishCatchphrase: document.getElementById('finish-catchphrase'),
+      newRecordLabel: document.getElementById('new-record-label'),
+      leaderboardEntries: document.getElementById('leaderboard-entries'),
+      // Nickname + worldwide leaderboard
+      nicknameOverlay: document.getElementById('nickname-overlay'),
+      nicknameInput: document.getElementById('nickname-input'),
+      nicknameSubmit: document.getElementById('nickname-submit'),
+      nicknameError: document.getElementById('nickname-error'),
+      lbPlayerName: document.getElementById('leaderboard-player-name'),
+      lbWorldwide: document.getElementById('lb-worldwide'),
+      lbPersonal: document.getElementById('lb-personal'),
+      worldwideEntries: document.getElementById('worldwide-entries'),
+      worldwideLoading: document.getElementById('worldwide-loading'),
+      worldwideError: document.getElementById('worldwide-error'),
+      weekIndicator: document.getElementById('lb-week-indicator'),
     };
+
+    // Leaderboard (localStorage)
+    this.leaderboard = this.loadLeaderboard();
+
+    // Firebase and nickname
+    this.nicknameManager = new NicknameManager();
+    this.firebaseDb = initFirebase();
+    this.worldwideScores = [];
+    this.activeLeaderboardTab = 'worldwide';
 
     // Input handlers — Space OR click to start/respawn, ESC for lobby
     this._spaceConsumed = false;
@@ -74,13 +102,16 @@ export class Game {
       } else if (this.state === 'dead') {
         e.preventDefault();
         this.respawn();
+      } else if (this.state === 'finished') {
+        e.preventDefault();
+        this.restartFromFinish();
       }
     };
 
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space') handleStart(e);
       if (e.code === 'Escape') {
-        if (this.state === 'dead') {
+        if (this.state === 'dead' || this.state === 'finished') {
           this.openLobby();
         } else if (this.state === 'lobby') {
           this.closeLobby();
@@ -88,26 +119,35 @@ export class Game {
       }
     });
 
-    // Click/tap anywhere on start or death screen
+    // Click/tap anywhere on start, death, or finish screen
     this.ui.startScreen.style.pointerEvents = 'auto';
     this.ui.startScreen.addEventListener('click', (e) => handleStart(e));
     this.ui.deathScreen.addEventListener('click', (e) => handleStart(e));
+    this.ui.finishScreen.addEventListener('click', (e) => {
+      // Don't restart if clicking on tab buttons or leaderboard content
+      if (e.target.closest('.lb-tab') || e.target.closest('.lb-entries') || e.target.closest('.lb-tab-content')) return;
+      handleStart(e);
+    });
 
     // Lobby setup
     this.setupLobby();
+    this.setupLeaderboardTabs();
+    this.setupNickname();
 
     window.addEventListener('resize', () => this.onResize());
     this.animate();
   }
 
   startGame() {
-    this.state = 'playing';
-    this.ui.startScreen.style.display = 'none';
-    this.clock.start();
-    // Consume current Space press so player doesn't ollie on first frame
-    this.input.keys['Space'] = false;
-    this.input.justPressed['Space'] = false;
-    this.input._previousKeys['Space'] = true;
+    this.ensureNickname(() => {
+      this.state = 'playing';
+      this.ui.startScreen.style.display = 'none';
+      this.clock.start();
+      // Consume current Space press so player doesn't ollie on first frame
+      this.input.keys['Space'] = false;
+      this.input.justPressed['Space'] = false;
+      this.input._previousKeys['Space'] = true;
+    });
   }
 
   initRenderer() {
@@ -186,13 +226,15 @@ export class Game {
   openLobby() {
     this.state = 'lobby';
     this.ui.deathScreen.classList.remove('active');
+    this.ui.finishScreen.classList.remove('active');
+    this.ui.newRecordLabel.classList.remove('show');
     this.ui.crashVignette.style.opacity = '0';
     this.ui.lobbyScreen.classList.add('active');
   }
 
   closeLobby() {
     this.ui.lobbyScreen.classList.remove('active');
-    this.respawn();
+    this.fullReset();
   }
 
   initCarveTrail() {
@@ -338,7 +380,7 @@ export class Game {
 
       // UI
       this.updateUI(trickState, playerState);
-    } else if (this.state === 'dead') {
+    } else if (this.state === 'dead' || this.state === 'finished') {
       this.particles.update(dt);
     }
 
@@ -353,6 +395,12 @@ export class Game {
         this.currentCheckpoint++;
         this.checkpointAlertTime = performance.now();
         this.tricks.totalScore += 500 * this.currentCheckpoint;
+
+        // Finish line reached!
+        if (cp.isFinish) {
+          this.showFinishScreen();
+          return;
+        }
       }
     }
   }
@@ -413,6 +461,300 @@ export class Game {
     );
   }
 
+  showFinishScreen() {
+    this.state = 'finished';
+    const finalScore = this.tricks.totalScore;
+
+    // Pick a finish catchphrase based on score
+    let phrase;
+    if (finalScore >= 20000) phrase = 'ABSOLUTELY GODLIKE!';
+    else if (finalScore >= 10000) phrase = 'LEGENDARY RUN!';
+    else if (finalScore >= 5000) phrase = 'THAT WAS SICK!';
+    else if (finalScore >= 2000) phrase = 'SOLID RIDING!';
+    else phrase = 'YOU MADE IT!';
+
+    // Save to personal leaderboard and check if new record
+    const isNewRecord = this.addToLeaderboard(finalScore);
+
+    this.ui.finishScreen.classList.add('active');
+    this.ui.finishScore.textContent = finalScore.toLocaleString();
+    this.ui.finishCatchphrase.textContent = phrase;
+
+    if (isNewRecord) {
+      this.ui.newRecordLabel.classList.add('show');
+    } else {
+      this.ui.newRecordLabel.classList.remove('show');
+    }
+
+    // Display nickname
+    const nick = this.nicknameManager.getNickname();
+    this.ui.lbPlayerName.textContent = nick ? `RIDER: ${nick}` : '';
+
+    // Update week indicator
+    const weekId = getWeekId();
+    const parts = weekId.split('-W');
+    this.ui.weekIndicator.textContent = `WEEK ${parseInt(parts[1])} OF ${parts[0]}`;
+
+    // Render personal leaderboard tab
+    this.renderLeaderboard(finalScore);
+
+    // Default to worldwide tab
+    this.switchLeaderboardTab('worldwide');
+
+    // Submit to Firebase and fetch worldwide scores (async, non-blocking)
+    this.submitAndFetchWorldwide(finalScore);
+  }
+
+  async submitAndFetchWorldwide(finalScore) {
+    const db = this.firebaseDb;
+    const nickname = this.nicknameManager.getNickname() || 'ANON';
+
+    // Show loading state
+    this.ui.worldwideLoading.style.display = 'block';
+    this.ui.worldwideError.style.display = 'none';
+    this.ui.worldwideEntries.innerHTML = '';
+
+    // Submit score to Firebase
+    await submitScore(db, nickname, finalScore);
+
+    // Fetch worldwide leaderboard
+    const scores = await fetchWorldwideScores(db, 20);
+
+    if (scores.length === 0 && !db) {
+      // Firebase not available
+      this.ui.worldwideLoading.style.display = 'none';
+      this.ui.worldwideError.style.display = 'block';
+      this.ui.worldwideError.textContent = 'OFFLINE — CHECK CONNECTION';
+      return;
+    }
+
+    this.ui.worldwideLoading.style.display = 'none';
+    this.worldwideScores = scores;
+    this.renderWorldwideLeaderboard(finalScore, nickname);
+  }
+
+  renderWorldwideLeaderboard(currentScore, currentNickname) {
+    const container = this.ui.worldwideEntries;
+    container.innerHTML = '';
+    const entries = this.worldwideScores.slice(0, 10);
+    let currentMarked = false;
+
+    entries.forEach((entry, i) => {
+      const div = document.createElement('div');
+      div.className = 'leaderboard-entry';
+
+      // Highlight the current player's just-submitted score
+      if (!currentMarked && entry.score === currentScore && entry.nickname === currentNickname) {
+        div.classList.add('current');
+        currentMarked = true;
+      }
+
+      const rankSpan = document.createElement('span');
+      rankSpan.className = 'lb-rank';
+      if (i === 0) rankSpan.classList.add('gold');
+      else if (i === 1) rankSpan.classList.add('silver');
+      else if (i === 2) rankSpan.classList.add('bronze');
+      rankSpan.textContent = `#${i + 1}`;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'lb-name';
+      nameSpan.textContent = entry.nickname || 'ANON';
+
+      const scoreSpan = document.createElement('span');
+      scoreSpan.className = 'lb-score';
+      scoreSpan.textContent = entry.score.toLocaleString();
+
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'lb-label';
+      labelSpan.textContent = 'PTS';
+
+      div.appendChild(rankSpan);
+      div.appendChild(nameSpan);
+      div.appendChild(scoreSpan);
+      div.appendChild(labelSpan);
+      container.appendChild(div);
+    });
+
+    if (entries.length === 0) {
+      container.innerHTML = '<div class="lb-loading">NO SCORES THIS WEEK YET</div>';
+    }
+  }
+
+  restartFromFinish() {
+    this.ui.finishScreen.classList.remove('active');
+    this.ui.newRecordLabel.classList.remove('show');
+    this.fullReset();
+  }
+
+  fullReset() {
+    this.state = 'playing';
+    this.deathTimer = 0;
+    this.crashPhraseSet = false;
+    this.currentCheckpoint = 0;
+    this.ui.deathScreen.classList.remove('active');
+    this.ui.finishScreen.classList.remove('active');
+    this.ui.crashVignette.style.opacity = '0';
+
+    // Consume Space
+    this.input.keys['Space'] = false;
+    this.input.justPressed['Space'] = false;
+    this.input._previousKeys['Space'] = true;
+
+    // Reset trick score
+    this.tricks.totalScore = 0;
+    this.tricks.comboMultiplier = 1;
+    this.tricks.comboTimer = 0;
+
+    // Reset checkpoints
+    for (const cp of this.terrain.checkpoints) {
+      cp.reached = false;
+    }
+
+    // Respawn player at start
+    const startPos = new THREE.Vector3(0, 5, 0);
+    this.lastCheckpointPos.copy(startPos);
+    this.player.respawn(startPos);
+    this.currentCameraPos.copy(startPos.clone().add(this.cameraOffset));
+
+    // Reset trail
+    this.trailIndex = 0;
+    this.trailCount = 0;
+    this.lastTrailPos = null;
+    this.trailIndices = [];
+    this.trailMesh.geometry.setIndex([]);
+  }
+
+  // ---- LEADERBOARD ----
+
+  loadLeaderboard() {
+    try {
+      const data = localStorage.getItem('shred-summit-leaderboard');
+      if (data) return JSON.parse(data);
+    } catch (e) { /* ignore */ }
+    return [];
+  }
+
+  saveLeaderboard() {
+    try {
+      localStorage.setItem('shred-summit-leaderboard', JSON.stringify(this.leaderboard));
+    } catch (e) { /* ignore */ }
+  }
+
+  addToLeaderboard(score) {
+    const entry = { score, date: Date.now() };
+    this.leaderboard.push(entry);
+    this.leaderboard.sort((a, b) => b.score - a.score);
+    // Keep top 10
+    if (this.leaderboard.length > 10) this.leaderboard.length = 10;
+    this.saveLeaderboard();
+    // Check if this score is the new #1
+    return this.leaderboard[0].score === score && this.leaderboard[0].date === entry.date;
+  }
+
+  renderLeaderboard(currentScore) {
+    const container = this.ui.leaderboardEntries;
+    container.innerHTML = '';
+    const entries = this.leaderboard.slice(0, 5);
+    let currentMarked = false;
+
+    entries.forEach((entry, i) => {
+      const div = document.createElement('div');
+      div.className = 'leaderboard-entry';
+
+      // Highlight current run's entry (first matching score)
+      if (!currentMarked && entry.score === currentScore) {
+        div.classList.add('current');
+        currentMarked = true;
+      }
+
+      const rankSpan = document.createElement('span');
+      rankSpan.className = 'lb-rank';
+      if (i === 0) rankSpan.classList.add('gold');
+      else if (i === 1) rankSpan.classList.add('silver');
+      else if (i === 2) rankSpan.classList.add('bronze');
+      rankSpan.textContent = `#${i + 1}`;
+
+      const scoreSpan = document.createElement('span');
+      scoreSpan.className = 'lb-score';
+      scoreSpan.textContent = entry.score.toLocaleString();
+
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'lb-label';
+      labelSpan.textContent = 'PTS';
+
+      div.appendChild(rankSpan);
+      div.appendChild(scoreSpan);
+      div.appendChild(labelSpan);
+      container.appendChild(div);
+    });
+
+    // If no entries yet (shouldn't happen since we just added one)
+    if (entries.length === 0) {
+      container.textContent = 'No runs yet!';
+    }
+  }
+
+  // ---- LEADERBOARD TABS ----
+
+  setupLeaderboardTabs() {
+    document.querySelectorAll('.lb-tab').forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.switchLeaderboardTab(tab.dataset.tab);
+      });
+    });
+  }
+
+  switchLeaderboardTab(tabName) {
+    this.activeLeaderboardTab = tabName;
+    document.querySelectorAll('.lb-tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.tab === tabName);
+    });
+    this.ui.lbWorldwide.classList.toggle('active', tabName === 'worldwide');
+    this.ui.lbPersonal.classList.toggle('active', tabName === 'personal');
+    this.ui.lbWorldwide.style.display = tabName === 'worldwide' ? 'block' : 'none';
+    this.ui.lbPersonal.style.display = tabName === 'personal' ? 'block' : 'none';
+    this.ui.weekIndicator.style.display = tabName === 'worldwide' ? 'block' : 'none';
+  }
+
+  // ---- NICKNAME ----
+
+  setupNickname() {
+    this.ui.nicknameSubmit.addEventListener('click', () => this.submitNickname());
+    this.ui.nicknameInput.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.code === 'Enter') this.submitNickname();
+    });
+    this.ui.nicknameInput.addEventListener('keyup', (e) => e.stopPropagation());
+  }
+
+  submitNickname() {
+    const value = this.ui.nicknameInput.value.trim();
+    if (!this.nicknameManager.validate(value)) {
+      this.ui.nicknameError.textContent = 'USE 3-12 LETTERS, NUMBERS, _ OR -';
+      return;
+    }
+    this.nicknameManager.save(value);
+    this.ui.nicknameOverlay.classList.remove('active');
+    this.input.disabled = false;
+    this.pendingNicknameCallback?.();
+    this.pendingNicknameCallback = null;
+  }
+
+  ensureNickname(callback) {
+    if (this.nicknameManager.hasNickname()) {
+      callback();
+      return;
+    }
+    // Show nickname prompt
+    this.input.disabled = true;
+    this.ui.nicknameOverlay.classList.add('active');
+    this.ui.nicknameInput.value = '';
+    this.ui.nicknameError.textContent = '';
+    setTimeout(() => this.ui.nicknameInput.focus(), 100);
+    this.pendingNicknameCallback = callback;
+  }
+
   updateUI(trickState, playerState) {
     // Score
     this.ui.score.textContent = trickState.score.toLocaleString();
@@ -426,7 +768,7 @@ export class Game {
     this.ui.altitude.textContent = `ALT ${alt}m`;
 
     // Checkpoint
-    this.ui.checkpoint.textContent = `CHECKPOINT ${this.currentCheckpoint}`;
+    this.ui.checkpoint.textContent = `CHECKPOINT ${this.currentCheckpoint} / 8`;
 
     // Checkpoint alert
     const timeSinceCP = performance.now() - this.checkpointAlertTime;

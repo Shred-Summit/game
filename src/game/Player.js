@@ -369,6 +369,11 @@ export class Player {
       } else {
         this.riderGroup.rotation.x = THREE.MathUtils.lerp(this.riderGroup.rotation.x, 0, 0.1);
       }
+      // Reset arm positions from grabs
+      this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, 0, 0.12);
+      this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, 0, 0.12);
+      this.leftArm.position.y = THREE.MathUtils.lerp(this.leftArm.position.y, 0.9, 0.12);
+      this.rightArm.position.y = THREE.MathUtils.lerp(this.rightArm.position.y, 0.9, 0.12);
 
       // Rider leans into carve (shoulder rotation + body lean)
       this.riderGroup.rotation.z = THREE.MathUtils.lerp(
@@ -456,9 +461,11 @@ export class Player {
       // --- SMOOTH SPIN/FLIP SYSTEM ---
       // Spins and flips ramp up smoothly and STOP when keys are released.
       // Player must time their inputs to land clean rotations.
-      const flipTarget = 6.0;     // target flip angular vel
-      const spinTarget = 6.5;     // target spin angular vel
-      const rampUp = 14.0;        // how fast rotation builds (rad/s²)
+      // Shift = tuck in air → 1.5x faster spins/flips/corks
+      const tuckMul = (input.tuck || input.grab) ? 1.5 : 1.0;
+      const flipTarget = 6.0 * tuckMul;     // target flip angular vel
+      const spinTarget = 6.5 * tuckMul;     // target spin angular vel
+      const rampUp = 14.0 * tuckMul;        // how fast rotation builds (rad/s²)
       const stopSpeed = 18.0;     // how fast rotation stops on release (rad/s²)
 
       const flipping = input.flipForward || input.flipBackward;
@@ -484,7 +491,7 @@ export class Player {
 
       if (isCork) {
         // Cork: flip + spin simultaneously → off-axis diagonal rotation
-        const corkFlipTarget = (input.flipForward ? 1 : -1) * flipTarget * 0.7;
+        const corkFlipTarget = (input.flipForward ? -1 : 1) * flipTarget * 0.7;
         const corkSpinTarget = (input.spinLeft ? 1 : -1) * spinTarget * 0.85;
         const corkRollTarget = (input.spinLeft ? 1 : -1) * 2.5;
 
@@ -494,7 +501,8 @@ export class Player {
         this.angularVelocity.z = rampOrBrake(this.angularVelocity.z, corkRollTarget, true);
       } else {
         // --- FLIP (W/S) — ramp up while held, hard stop on release ---
-        const flipDir = input.flipForward ? 1 : input.flipBackward ? -1 : 0;
+        // Negative X = frontflip (W), Positive X = backflip (S)
+        const flipDir = input.flipForward ? -1 : input.flipBackward ? 1 : 0;
         this.angularVelocity.x = rampOrBrake(
           this.angularVelocity.x, flipDir * flipTarget, flipping
         );
@@ -570,13 +578,29 @@ export class Player {
 
     this.position.x = THREE.MathUtils.clamp(this.position.x, -50, 50);
 
-    // Grab animations
+    // Grab & tuck animations
     if (this.isGrabbing && !this.grounded) {
       this.applyGrabPose(this.grabType);
+    } else if (this.isTucking && !this.grounded && !this.grinding) {
+      // Air tuck — crouched tight for faster rotation
+      this.riderGroup.position.y = THREE.MathUtils.lerp(this.riderGroup.position.y, -0.2, 0.15);
+      this.riderGroup.rotation.x = THREE.MathUtils.lerp(this.riderGroup.rotation.x, 0.4, 0.15);
+      this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 1.2, 0.15);
+      this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -1.2, 0.15);
+      // Reset grab-specific arm axes
+      this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, 0, 0.15);
+      this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, 0, 0.15);
+      this.leftArm.position.y = THREE.MathUtils.lerp(this.leftArm.position.y, 0.9, 0.15);
+      this.rightArm.position.y = THREE.MathUtils.lerp(this.rightArm.position.y, 0.9, 0.15);
     } else if (!this.isTucking && !this.grinding) {
       this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 0.5, 0.1);
       this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -0.5, 0.1);
+      this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, 0, 0.1);
+      this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, 0, 0.1);
+      this.leftArm.position.y = THREE.MathUtils.lerp(this.leftArm.position.y, 0.9, 0.1);
+      this.rightArm.position.y = THREE.MathUtils.lerp(this.rightArm.position.y, 0.9, 0.1);
       this.riderGroup.position.y = THREE.MathUtils.lerp(this.riderGroup.position.y, 0, 0.1);
+      this.riderGroup.rotation.x = THREE.MathUtils.lerp(this.riderGroup.rotation.x, 0, 0.1);
     }
 
     // Update visual
@@ -733,36 +757,96 @@ export class Player {
   }
 
   applyGrabPose(type) {
+    const L = 0.18; // lerp speed for smooth transitions
+    // Deeper crouch for all grabs — brings arms closer to the board
+    let crouchY = -0.35;
+    let leanX = 0.3; // slight forward lean by default
+
     switch (type) {
       case 'indy':
-        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -1.8, 0.2);
-        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 0.8, 0.2);
+        // Right hand grabs toe edge between feet — arm reaches straight down
+        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -2.2, L);
+        this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, 0.2, L);
+        this.rightArm.position.y = THREE.MathUtils.lerp(this.rightArm.position.y, 0.6, L);
+        // Left arm relaxed / balanced
+        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 0.9, L);
+        this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, 0, L);
+        this.leftArm.position.y = THREE.MathUtils.lerp(this.leftArm.position.y, 0.9, L);
         break;
+
       case 'method':
-        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 1.8, 0.2);
-        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -0.8, 0.2);
+        // Left hand reaches behind and up to heel edge — classic tweaked method
+        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 2.0, L);
+        this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, -1.0, L);
+        this.leftArm.position.y = THREE.MathUtils.lerp(this.leftArm.position.y, 0.7, L);
+        // Right arm forward for balance
+        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -0.6, L);
+        this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, 0.5, L);
+        this.rightArm.position.y = THREE.MathUtils.lerp(this.rightArm.position.y, 0.9, L);
+        leanX = 0.45; // more forward lean for method
         break;
+
       case 'stalefish':
-        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 1.5, 0.2);
-        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -1.2, 0.2);
+        // Right hand crosses body to grab heel edge between feet
+        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -1.6, L);
+        this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, -0.4, L);
+        this.rightArm.position.y = THREE.MathUtils.lerp(this.rightArm.position.y, 0.55, L);
+        // Left arm out for balance
+        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 1.0, L);
+        this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, 0.3, L);
+        this.leftArm.position.y = THREE.MathUtils.lerp(this.leftArm.position.y, 0.9, L);
+        crouchY = -0.4; // extra deep crouch to reach across
         break;
+
       case 'melon':
-        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 1.6, 0.2);
-        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -0.5, 0.2);
+        // Left hand grabs heel edge between feet — arm reaches straight down
+        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 2.2, L);
+        this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, 0.2, L);
+        this.leftArm.position.y = THREE.MathUtils.lerp(this.leftArm.position.y, 0.6, L);
+        // Right arm relaxed / balanced
+        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -0.9, L);
+        this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, 0, L);
+        this.rightArm.position.y = THREE.MathUtils.lerp(this.rightArm.position.y, 0.9, L);
         break;
+
       case 'nosegrab':
-        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 1.0, 0.2);
-        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -1.6, 0.2);
+        // Right hand reaches forward and down to grab board nose
+        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -1.8, L);
+        this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, 1.0, L);
+        this.rightArm.position.y = THREE.MathUtils.lerp(this.rightArm.position.y, 0.55, L);
+        // Left arm back for balance
+        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 0.7, L);
+        this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, -0.5, L);
+        this.leftArm.position.y = THREE.MathUtils.lerp(this.leftArm.position.y, 0.9, L);
+        leanX = 0.55; // lean forward to reach the nose
+        crouchY = -0.3;
         break;
+
       case 'tailgrab':
-        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 1.6, 0.2);
-        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -1.0, 0.2);
+        // Right hand reaches backward and down to grab board tail
+        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -1.8, L);
+        this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, -1.0, L);
+        this.rightArm.position.y = THREE.MathUtils.lerp(this.rightArm.position.y, 0.55, L);
+        // Left arm forward for balance
+        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 0.7, L);
+        this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, 0.5, L);
+        this.leftArm.position.y = THREE.MathUtils.lerp(this.leftArm.position.y, 0.9, L);
+        leanX = -0.15; // lean back to reach the tail
+        crouchY = -0.3;
         break;
+
       default:
-        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 1.4, 0.2);
-        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -1.4, 0.2);
+        this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, 1.8, L);
+        this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, 0, L);
+        this.leftArm.position.y = THREE.MathUtils.lerp(this.leftArm.position.y, 0.6, L);
+        this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, -1.8, L);
+        this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, 0, L);
+        this.rightArm.position.y = THREE.MathUtils.lerp(this.rightArm.position.y, 0.6, L);
     }
-    this.riderGroup.position.y = THREE.MathUtils.lerp(this.riderGroup.position.y, -0.2, 0.15);
+
+    // Crouch body down and lean
+    this.riderGroup.position.y = THREE.MathUtils.lerp(this.riderGroup.position.y, crouchY, 0.15);
+    this.riderGroup.rotation.x = THREE.MathUtils.lerp(this.riderGroup.rotation.x, leanX, 0.15);
   }
 
   setColor(part, colorHex) {

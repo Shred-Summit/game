@@ -413,6 +413,287 @@
       line-height: 1.8;
       letter-spacing: 1px;
     }
+
+    /* Finish / Leaderboard screen */
+    #finish-screen {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.0);
+      z-index: 60;
+      transition: background 0.5s;
+      cursor: pointer;
+    }
+
+    #finish-screen.active {
+      display: flex;
+      background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(10,20,40,0.92) 100%);
+    }
+
+    #finish-screen h1 {
+      font-size: 80px;
+      font-family: 'Bebas Neue', sans-serif;
+      color: #ffd700;
+      letter-spacing: 10px;
+      text-shadow: 0 4px 30px rgba(255,215,0,0.5);
+      margin-bottom: 4px;
+      animation: finishPop 0.6s cubic-bezier(0.2, 0, 0.2, 1) forwards;
+    }
+
+    @keyframes finishPop {
+      0% { transform: scale(2.5); opacity: 0; }
+      60% { transform: scale(0.95); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    #finish-screen .finish-subtitle {
+      font-size: 24px;
+      font-family: 'Bebas Neue', sans-serif;
+      color: #4cf;
+      letter-spacing: 5px;
+      margin-bottom: 16px;
+      text-shadow: 0 2px 12px rgba(68,204,255,0.4);
+      animation: finishPop 0.6s 0.1s cubic-bezier(0.2, 0, 0.2, 1) both;
+    }
+
+    #finish-screen .final-score-big {
+      font-size: 56px;
+      font-family: 'Bebas Neue', sans-serif;
+      color: #fff;
+      letter-spacing: 3px;
+      margin-bottom: 6px;
+      animation: finishPop 0.6s 0.2s cubic-bezier(0.2, 0, 0.2, 1) both;
+    }
+
+    #finish-screen .new-record {
+      font-size: 18px;
+      font-family: 'Bebas Neue', sans-serif;
+      color: #ffd700;
+      letter-spacing: 4px;
+      margin-bottom: 20px;
+      opacity: 0;
+    }
+    #finish-screen .new-record.show {
+      opacity: 1;
+      animation: pulse 1s ease-in-out infinite;
+    }
+
+    .leaderboard {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 16px 28px;
+      margin-bottom: 24px;
+      min-width: 320px;
+      animation: finishPop 0.6s 0.3s cubic-bezier(0.2, 0, 0.2, 1) both;
+    }
+
+    .leaderboard h3 {
+      font-size: 16px;
+      font-family: 'Bebas Neue', sans-serif;
+      color: rgba(255,255,255,0.5);
+      letter-spacing: 4px;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+
+    .leaderboard-entry {
+      display: flex;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .leaderboard-entry:last-child { border-bottom: none; }
+
+    .leaderboard-entry .lb-rank {
+      font-size: 16px;
+      font-weight: 900;
+      color: rgba(255,255,255,0.35);
+      width: 32px;
+      text-align: center;
+      font-family: 'Bebas Neue', sans-serif;
+      letter-spacing: 1px;
+    }
+    .leaderboard-entry .lb-rank.gold { color: #ffd700; }
+    .leaderboard-entry .lb-rank.silver { color: #c0c0c0; }
+    .leaderboard-entry .lb-rank.bronze { color: #cd7f32; }
+
+    .leaderboard-entry .lb-score {
+      flex: 1;
+      font-size: 20px;
+      font-family: 'Bebas Neue', sans-serif;
+      color: rgba(255,255,255,0.8);
+      letter-spacing: 1px;
+      text-align: right;
+      padding-right: 12px;
+    }
+
+    .leaderboard-entry.current {
+      background: rgba(255,215,0,0.08);
+      border-radius: 6px;
+      padding: 6px 6px;
+      margin: 2px -6px;
+    }
+    .leaderboard-entry.current .lb-score {
+      color: #ffd700;
+    }
+
+    .leaderboard-entry .lb-label {
+      font-size: 11px;
+      color: rgba(255,255,255,0.3);
+      letter-spacing: 1px;
+      width: 50px;
+    }
+
+    #finish-screen .press-restart {
+      font-size: 18px;
+      color: rgba(255,255,255,0.7);
+      animation: pulse 1.5s ease-in-out infinite;
+      letter-spacing: 2px;
+    }
+
+    /* ===== Nickname overlay ===== */
+    #nickname-overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.85);
+      z-index: 200;
+    }
+    #nickname-overlay.active { display: flex; }
+
+    .nickname-modal { text-align: center; padding: 40px; }
+    .nickname-modal h2 {
+      font-size: 42px;
+      font-family: 'Bebas Neue', sans-serif;
+      color: #fff;
+      letter-spacing: 6px;
+      margin-bottom: 8px;
+    }
+    .nickname-subtitle {
+      color: rgba(255,255,255,0.4);
+      font-size: 12px;
+      letter-spacing: 3px;
+      margin-bottom: 24px;
+    }
+    #nickname-input {
+      display: block;
+      margin: 0 auto 12px;
+      width: 280px;
+      padding: 12px 16px;
+      font-size: 20px;
+      font-family: 'Bebas Neue', sans-serif;
+      letter-spacing: 4px;
+      text-align: center;
+      color: #fff;
+      background: rgba(255,255,255,0.08);
+      border: 2px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      outline: none;
+      text-transform: uppercase;
+    }
+    #nickname-input:focus { border-color: rgba(255,255,255,0.5); }
+    .nickname-error {
+      color: #ff6b6b;
+      font-size: 12px;
+      letter-spacing: 1px;
+      min-height: 18px;
+      margin-bottom: 12px;
+    }
+    #nickname-submit {
+      padding: 12px 40px;
+      font-size: 18px;
+      font-family: 'Bebas Neue', sans-serif;
+      letter-spacing: 4px;
+      color: #fff;
+      background: rgba(255,255,255,0.1);
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    #nickname-submit:hover {
+      background: rgba(255,255,255,0.2);
+      border-color: #fff;
+    }
+
+    /* ===== Leaderboard tabs ===== */
+    .lb-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 0;
+      margin-bottom: 12px;
+    }
+    .lb-tab {
+      padding: 8px 20px;
+      font-size: 13px;
+      font-family: 'Bebas Neue', sans-serif;
+      letter-spacing: 3px;
+      color: rgba(255,255,255,0.4);
+      background: none;
+      border: 1px solid rgba(255,255,255,0.1);
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s, background 0.2s;
+    }
+    .lb-tab:first-child { border-radius: 6px 0 0 6px; }
+    .lb-tab:last-child { border-radius: 0 6px 6px 0; }
+    .lb-tab.active {
+      color: #fff;
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.3);
+    }
+    .lb-tab:hover:not(.active) { color: rgba(255,255,255,0.6); }
+
+    .lb-tab-content { display: none; }
+    .lb-tab-content.active { display: block; }
+
+    .lb-week-indicator {
+      text-align: center;
+      font-size: 11px;
+      color: rgba(255,255,255,0.3);
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+    }
+    .lb-player-name {
+      text-align: center;
+      font-size: 13px;
+      font-family: 'Bebas Neue', sans-serif;
+      color: #4cf;
+      letter-spacing: 3px;
+      margin-bottom: 10px;
+    }
+    .lb-loading {
+      text-align: center;
+      color: rgba(255,255,255,0.3);
+      font-size: 12px;
+      letter-spacing: 2px;
+      padding: 16px 0;
+    }
+    .lb-error {
+      text-align: center;
+      color: rgba(255,150,100,0.5);
+      font-size: 11px;
+      letter-spacing: 2px;
+      padding: 4px 0;
+    }
+    .leaderboard-entry .lb-name {
+      flex: 1;
+      font-size: 14px;
+      color: rgba(255,255,255,0.6);
+      letter-spacing: 1px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 0 8px;
+    }
+    .leaderboard-entry.current .lb-name { color: #4cf; }
   </style>
 </head>
 <body>
@@ -458,6 +739,31 @@
       SHIFT TUCK · W/S FLIP · Q/E SPIN<br>
       FLIP+SPIN=CORK · GRFTVB GRABS
     </div>
+  </div>
+
+  <div id="finish-screen">
+    <h1>RUN COMPLETE</h1>
+    <div class="finish-subtitle" id="finish-catchphrase">LEGENDARY RUN!</div>
+    <div class="final-score-big">SCORE: <span id="finish-score">0</span></div>
+    <div class="new-record" id="new-record-label">NEW HIGH SCORE!</div>
+    <div class="leaderboard">
+      <div id="leaderboard-player-name" class="lb-player-name"></div>
+      <div class="lb-tabs">
+        <button class="lb-tab active" data-tab="worldwide">WORLDWIDE</button>
+        <button class="lb-tab" data-tab="personal">PERSONAL</button>
+      </div>
+      <div id="lb-week-indicator" class="lb-week-indicator"></div>
+      <div id="lb-worldwide" class="lb-tab-content active">
+        <div id="worldwide-entries" class="lb-entries"></div>
+        <div id="worldwide-loading" class="lb-loading">LOADING...</div>
+        <div id="worldwide-error" class="lb-error" style="display:none"></div>
+      </div>
+      <div id="lb-personal" class="lb-tab-content" style="display:none">
+        <div id="leaderboard-entries"></div>
+      </div>
+    </div>
+    <div class="press-restart">PRESS SPACE OR CLICK TO RIDE AGAIN</div>
+    <div class="press-restart" style="margin-top:8px; font-size:13px; opacity:0.4">ESC — CUSTOMIZE RIDER</div>
   </div>
 
   <div id="lobby-screen">
@@ -508,6 +814,16 @@
     </div>
     <button id="lobby-drop-in">DROP IN</button>
     <div class="lobby-hint">ESC TO RETURN TO LOBBY AFTER CRASHING</div>
+  </div>
+
+  <div id="nickname-overlay">
+    <div class="nickname-modal">
+      <h2>ENTER YOUR NAME</h2>
+      <p class="nickname-subtitle">FOR THE WORLDWIDE LEADERBOARD</p>
+      <input type="text" id="nickname-input" maxlength="12" placeholder="3-12 CHARACTERS" autocomplete="off" spellcheck="false" />
+      <div id="nickname-error" class="nickname-error"></div>
+      <button id="nickname-submit">LET'S SHRED</button>
+    </div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

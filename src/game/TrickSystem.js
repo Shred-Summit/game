@@ -10,6 +10,7 @@ export class TrickSystem {
 
     this.spinCount = 0;
     this.flipCount = 0;
+    this.flipDirection = 0; // negative = frontflip (W), positive = backflip (S)
     this.grabTime = 0;
     this.currentGrabType = null;
     this.grabTypes = new Set();
@@ -127,6 +128,7 @@ export class TrickSystem {
 
       const xRot = playerState.trickRotation.x;
       this.flipCount = Math.floor(Math.abs(xRot) / Math.PI);
+      if (xRot !== 0) this.flipDirection = xRot; // track sign for front/backflip naming
 
       // Track cork (flip + spin simultaneously)
       if (playerState.isCork) {
@@ -204,7 +206,7 @@ export class TrickSystem {
 
       // Regular flip
       if (this.flipCount >= 1) {
-        tricks.push(this.getFlipName(this.flipCount));
+        tricks.push(this.getFlipName(this.flipCount, this.flipDirection));
         trickScore += this.flipCount * 400;
       }
     }
@@ -248,6 +250,7 @@ export class TrickSystem {
 
     this.spinCount = 0;
     this.flipCount = 0;
+    this.flipDirection = 0;
     this.grabTime = 0;
     this.grabTypes.clear();
     this.currentGrabType = null;
@@ -325,9 +328,14 @@ export class TrickSystem {
     return `${prefix} ${deg}`;
   }
 
-  getFlipName(count) {
-    const names = ['', 'BACKFLIP', 'DOUBLE BACKFLIP', 'TRIPLE BACKFLIP'];
-    return names[Math.min(count, 3)] || `${count}x FLIP`;
+  getFlipName(count, direction = 0) {
+    // Negative X rotation = frontflip (W key), Positive X = backflip (S key)
+    const isFront = direction < 0;
+    const type = isFront ? 'FRONTFLIP' : 'BACKFLIP';
+    if (count === 1) return type;
+    if (count === 2) return `DOUBLE ${type}`;
+    if (count === 3) return `TRIPLE ${type}`;
+    return `${count}x ${isFront ? 'FLIP' : 'FLIP'}`;
   }
 
   getGrabDisplayName(type) {

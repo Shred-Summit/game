@@ -144,9 +144,18 @@ export class Terrain {
     }
 
     // Features: jumps and rails
-    const featureCount = 5 + Math.floor(Math.random() * 4);
+    // Determine zone level for this chunk
+    const chunkMidZ = zOffset - this.chunkLength / 2;
+    const zoneLevel = this.getZoneLevel(chunkMidZ);
+
+    const featureCount = zoneLevel === 2
+      ? 6 + Math.floor(Math.random() * 4)   // 6-9 features for competition course
+      : 5 + Math.floor(Math.random() * 4);  // 5-8 features for freeride
+
     for (let i = 0; i < featureCount; i++) {
-      const x = (Math.random() - 0.5) * 35;
+      const x = zoneLevel === 2
+        ? (Math.random() - 0.5) * 45   // wider spread for bigger features
+        : (Math.random() - 0.5) * 35;
       const z = -20 - Math.random() * (this.chunkLength - 40);
       const roll = Math.random();
 
@@ -155,50 +164,103 @@ export class Terrain {
       // Extra data for physics
       let lipHeight = 0, lipAngle = 0, surfaceHeight = 0;
 
-      if (roll < 0.15) {
-        feature = this.createJump(30);
-        type = 'kicker'; width = 4; length = 5; size = 'small';
-        lipHeight = 2.0; lipAngle = 0.45;
-      } else if (roll < 0.3) {
-        feature = this.createJump(40);
-        type = 'kicker'; width = 5; length = 7; size = 'medium';
-        lipHeight = 2.7; lipAngle = 0.55;
-      } else if (roll < 0.4) {
-        feature = this.createJump(50);
-        type = 'kicker'; width = 6; length = 9; size = 'big';
-        lipHeight = 3.3; lipAngle = 0.62;
-      } else if (roll < 0.47) {
-        feature = this.createJump(60);
-        type = 'kicker'; width = 7; length = 11; size = 'big';
-        lipHeight = 4.0; lipAngle = 0.65;
-      } else if (roll < 0.57) {
-        const rs = 2 + Math.random() * 3; // 2x–5x longer rails
-        feature = this.createFlatRail(rs);
-        type = 'rail'; width = 1.5; length = 8 * rs; surfaceHeight = 1.2;
-      } else if (roll < 0.65) {
-        const rs = 2 + Math.random() * 3;
-        feature = this.createDownRail(rs);
-        type = 'rail'; width = 1.5; length = 10 * rs; surfaceHeight = 1.5;
-      } else if (roll < 0.73) {
-        const rs = 2 + Math.random() * 3;
-        feature = this.createRainbowRail(rs);
-        type = 'rail'; width = 1.5; length = 10 * rs; surfaceHeight = 2.0;
-      } else if (roll < 0.8) {
-        const rs = 2 + Math.random() * 3;
-        feature = this.createFlatDownFlatRail(rs);
-        type = 'rail'; width = 1.5; length = 12 * rs; surfaceHeight = 1.5;
-      } else if (roll < 0.87) {
-        const rs = 2 + Math.random() * 3;
-        feature = this.createBox(rs);
-        type = 'rail'; width = 2; length = 8 * rs; surfaceHeight = 1.0;
-      } else if (roll < 0.93) {
-        const rs = 2 + Math.random() * 3;
-        feature = this.createCRail(rs);
-        type = 'rail'; width = 2; length = 10 * rs; surfaceHeight = 1.3;
+      if (zoneLevel === 2) {
+        // ===== LEVEL 2: Competition slopestyle course =====
+        // Bigger jumps (2.5x), longer & wider rails, more complex rail types
+        const ws = 3; // rail width scale
+
+        if (roll < 0.10) {
+          feature = this.createJump(75);
+          type = 'kicker'; width = 10; length = 12.5; size = 'medium';
+          lipHeight = 5.0; lipAngle = 0.45;
+        } else if (roll < 0.20) {
+          feature = this.createJump(100);
+          type = 'kicker'; width = 12.5; length = 17.5; size = 'big';
+          lipHeight = 6.75; lipAngle = 0.55;
+        } else if (roll < 0.27) {
+          feature = this.createJump(125);
+          type = 'kicker'; width = 15; length = 22.5; size = 'big';
+          lipHeight = 8.25; lipAngle = 0.62;
+        } else if (roll < 0.32) {
+          feature = this.createJump(150);
+          type = 'kicker'; width = 17.5; length = 27.5; size = 'big';
+          lipHeight = 10.0; lipAngle = 0.65;
+        } else if (roll < 0.40) {
+          const rs = 3 + Math.random() * 4;
+          feature = this.createFlatRail(rs, ws);
+          type = 'rail'; width = 1.5 * ws; length = 8 * rs; surfaceHeight = 1.2;
+        } else if (roll < 0.47) {
+          const rs = 3 + Math.random() * 4;
+          feature = this.createDownRail(rs, ws);
+          type = 'rail'; width = 1.5 * ws; length = 10 * rs; surfaceHeight = 1.5;
+        } else if (roll < 0.55) {
+          const rs = 3 + Math.random() * 4;
+          feature = this.createRainbowRail(rs, ws);
+          type = 'rail'; width = 1.5 * ws; length = 10 * rs; surfaceHeight = 2.0;
+        } else if (roll < 0.65) {
+          const rs = 3 + Math.random() * 4;
+          feature = this.createFlatDownFlatRail(rs, ws);
+          type = 'rail'; width = 1.5 * ws; length = 12 * rs; surfaceHeight = 1.5;
+        } else if (roll < 0.73) {
+          const rs = 3 + Math.random() * 4;
+          feature = this.createBox(rs, ws);
+          type = 'rail'; width = 2 * ws; length = 8 * rs; surfaceHeight = 1.0;
+        } else if (roll < 0.85) {
+          const rs = 3 + Math.random() * 4;
+          feature = this.createCRail(rs, ws);
+          type = 'rail'; width = 2 * ws; length = 10 * rs; surfaceHeight = 1.3;
+        } else {
+          const rs = 3 + Math.random() * 4;
+          feature = this.createKinkRail(rs, ws);
+          type = 'rail'; width = 1.5 * ws; length = 10 * rs; surfaceHeight = 1.8;
+        }
       } else {
-        const rs = 2 + Math.random() * 3;
-        feature = this.createKinkRail(rs);
-        type = 'rail'; width = 1.5; length = 10 * rs; surfaceHeight = 1.8;
+        // ===== LEVEL 1: Freeride course (current sizes) =====
+        if (roll < 0.15) {
+          feature = this.createJump(30);
+          type = 'kicker'; width = 4; length = 5; size = 'small';
+          lipHeight = 2.0; lipAngle = 0.45;
+        } else if (roll < 0.3) {
+          feature = this.createJump(40);
+          type = 'kicker'; width = 5; length = 7; size = 'medium';
+          lipHeight = 2.7; lipAngle = 0.55;
+        } else if (roll < 0.4) {
+          feature = this.createJump(50);
+          type = 'kicker'; width = 6; length = 9; size = 'big';
+          lipHeight = 3.3; lipAngle = 0.62;
+        } else if (roll < 0.47) {
+          feature = this.createJump(60);
+          type = 'kicker'; width = 7; length = 11; size = 'big';
+          lipHeight = 4.0; lipAngle = 0.65;
+        } else if (roll < 0.57) {
+          const rs = 2 + Math.random() * 3;
+          feature = this.createFlatRail(rs);
+          type = 'rail'; width = 1.5; length = 8 * rs; surfaceHeight = 1.2;
+        } else if (roll < 0.65) {
+          const rs = 2 + Math.random() * 3;
+          feature = this.createDownRail(rs);
+          type = 'rail'; width = 1.5; length = 10 * rs; surfaceHeight = 1.5;
+        } else if (roll < 0.73) {
+          const rs = 2 + Math.random() * 3;
+          feature = this.createRainbowRail(rs);
+          type = 'rail'; width = 1.5; length = 10 * rs; surfaceHeight = 2.0;
+        } else if (roll < 0.8) {
+          const rs = 2 + Math.random() * 3;
+          feature = this.createFlatDownFlatRail(rs);
+          type = 'rail'; width = 1.5; length = 12 * rs; surfaceHeight = 1.5;
+        } else if (roll < 0.87) {
+          const rs = 2 + Math.random() * 3;
+          feature = this.createBox(rs);
+          type = 'rail'; width = 2; length = 8 * rs; surfaceHeight = 1.0;
+        } else if (roll < 0.93) {
+          const rs = 2 + Math.random() * 3;
+          feature = this.createCRail(rs);
+          type = 'rail'; width = 2; length = 10 * rs; surfaceHeight = 1.3;
+        } else {
+          const rs = 2 + Math.random() * 3;
+          feature = this.createKinkRail(rs);
+          type = 'rail'; width = 1.5; length = 10 * rs; surfaceHeight = 1.8;
+        }
       }
 
       // Sample min height across the feature footprint and sink slightly to embed in snow
@@ -228,13 +290,15 @@ export class Terrain {
     while (this.nextCheckpointZ > zOffset - this.chunkLength) {
       const cpZ = this.nextCheckpointZ;
       const cpY = this.computeHeight(0, cpZ);
-      const checkpoint = this.createCheckpoint();
+      const cpNumber = this.checkpoints.length + 1;
+      const isFinish = cpNumber === 8;
+      const checkpoint = isFinish ? this.createFinishLine() : this.createCheckpoint();
       checkpoint.position.set(0, cpY, cpZ);
       this.scene.add(checkpoint);
       chunk.objects.push(checkpoint);
       this.checkpoints.push({
         position: new THREE.Vector3(0, cpY + 2, cpZ),
-        z: cpZ, reached: false, mesh: checkpoint,
+        z: cpZ, reached: false, mesh: checkpoint, isFinish,
       });
       this.nextCheckpointZ -= this.checkpointInterval;
     }
@@ -254,6 +318,10 @@ export class Terrain {
       height += Math.pow((normalizedX - 0.5) / 0.5, 2.0) * 16;
     }
     return height;
+  }
+
+  getZoneLevel(globalZ) {
+    return globalZ <= -2400 ? 2 : 1;
   }
 
   // --- JUMPS (sized by "feet" — 30, 40, 50, 60) ---
@@ -331,7 +399,7 @@ export class Terrain {
 
   // --- RAIL TYPES ---
 
-  createFlatRail(lengthScale = 1) {
+  createFlatRail(lengthScale = 1, widthScale = 1) {
     const group = new THREE.Group();
     const railLength = 8 * lengthScale;
     const railHeight = 1.2;
@@ -340,7 +408,7 @@ export class Terrain {
     const postCount = Math.max(3, Math.round(2 * lengthScale) + 1);
     for (let i = 0; i < postCount; i++) {
       const post = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.08, railHeight, 6),
+        new THREE.CylinderGeometry(0.06 * widthScale, 0.08 * widthScale, railHeight, 6),
         this.rockMaterial
       );
       post.position.set(0, railHeight / 2, -railLength / 2 + i * (railLength / (postCount - 1)));
@@ -350,7 +418,7 @@ export class Terrain {
 
     // Round rail
     const rail = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.06, railLength, 8),
+      new THREE.CylinderGeometry(0.06 * widthScale, 0.06 * widthScale, railLength, 8),
       this.metalMaterial
     );
     rail.rotation.x = Math.PI / 2;
@@ -361,7 +429,7 @@ export class Terrain {
     return group;
   }
 
-  createDownRail(lengthScale = 1) {
+  createDownRail(lengthScale = 1, widthScale = 1) {
     const group = new THREE.Group();
     const railLength = 10 * lengthScale;
     const startHeight = 2.0;
@@ -374,7 +442,7 @@ export class Terrain {
       const h = THREE.MathUtils.lerp(startHeight, endHeight, t);
       const z = -railLength / 2 + i * (railLength / (postCount - 1));
       const post = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.08, h, 6),
+        new THREE.CylinderGeometry(0.06 * widthScale, 0.08 * widthScale, h, 6),
         this.rockMaterial
       );
       post.position.set(0, h / 2, z);
@@ -386,7 +454,7 @@ export class Terrain {
     const midY = (startHeight + endHeight) / 2;
     const angle = Math.atan2(startHeight - endHeight, railLength);
     const rail = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.06, railLength * 1.05, 8),
+      new THREE.CylinderGeometry(0.06 * widthScale, 0.06 * widthScale, railLength * 1.05, 8),
       this.metalMaterial
     );
     rail.rotation.x = Math.PI / 2 - angle;
@@ -397,7 +465,7 @@ export class Terrain {
     return group;
   }
 
-  createRainbowRail(lengthScale = 1) {
+  createRainbowRail(lengthScale = 1, widthScale = 1) {
     const group = new THREE.Group();
     const segments = Math.round(16 * lengthScale);
     const railLength = 10 * lengthScale;
@@ -416,7 +484,7 @@ export class Terrain {
       const angle = Math.atan2(y2 - y1, z2 - z1);
 
       const seg = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.06, segLen, 6),
+        new THREE.CylinderGeometry(0.06 * widthScale, 0.06 * widthScale, segLen, 6),
         this.paintedMetalMaterial
       );
       seg.rotation.x = Math.PI / 2 - angle;
@@ -430,7 +498,7 @@ export class Terrain {
       const z = -railLength / 2 + t * railLength;
       const y = Math.sin(t * Math.PI) * peakHeight + 0.5;
       const post = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.05, 0.07, y, 6),
+        new THREE.CylinderGeometry(0.05 * widthScale, 0.07 * widthScale, y, 6),
         this.rockMaterial
       );
       post.position.set(0, y / 2, z);
@@ -440,7 +508,7 @@ export class Terrain {
     return group;
   }
 
-  createFlatDownFlatRail(lengthScale = 1) {
+  createFlatDownFlatRail(lengthScale = 1, widthScale = 1) {
     const group = new THREE.Group();
     const totalLength = 12 * lengthScale;
     const flatLen = 3 * lengthScale;
@@ -449,7 +517,7 @@ export class Terrain {
 
     // First flat section
     const flat1 = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.06, flatLen, 8),
+      new THREE.CylinderGeometry(0.06 * widthScale, 0.06 * widthScale, flatLen, 8),
       this.metalMaterial
     );
     flat1.rotation.x = Math.PI / 2;
@@ -462,7 +530,7 @@ export class Terrain {
     const downAngle = Math.atan2(dropHeight, downLen);
     const downActual = Math.sqrt(downLen ** 2 + dropHeight ** 2);
     const down = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.06, downActual, 8),
+      new THREE.CylinderGeometry(0.06 * widthScale, 0.06 * widthScale, downActual, 8),
       this.rustyMetalMaterial
     );
     down.rotation.x = Math.PI / 2 - downAngle;
@@ -472,7 +540,7 @@ export class Terrain {
 
     // Second flat section
     const flat2 = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.06, flatLen, 8),
+      new THREE.CylinderGeometry(0.06 * widthScale, 0.06 * widthScale, flatLen, 8),
       this.metalMaterial
     );
     flat2.rotation.x = Math.PI / 2;
@@ -485,7 +553,7 @@ export class Terrain {
       const t = (z + totalLength / 2) / totalLength;
       const h = t < 0.3 ? railHeight : railHeight - dropHeight * ((t - 0.3) / 0.7);
       const post = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.05, 0.07, Math.max(h, 0.3), 6),
+        new THREE.CylinderGeometry(0.05 * widthScale, 0.07 * widthScale, Math.max(h, 0.3), 6),
         this.rockMaterial
       );
       post.position.set(0, Math.max(h, 0.3) / 2, z);
@@ -495,10 +563,10 @@ export class Terrain {
     return group;
   }
 
-  createBox(lengthScale = 1) {
+  createBox(lengthScale = 1, widthScale = 1) {
     const group = new THREE.Group();
     const boxLength = 8 * lengthScale;
-    const boxWidth = 1.2;
+    const boxWidth = 1.2 * widthScale;
     const boxHeight = 1.0;
 
     // Main box surface
@@ -538,7 +606,7 @@ export class Terrain {
     return group;
   }
 
-  createCRail(lengthScale = 1) {
+  createCRail(lengthScale = 1, widthScale = 1) {
     const group = new THREE.Group();
     const railHeight = 1.3;
     const s = lengthScale;
@@ -557,7 +625,7 @@ export class Terrain {
       const angle = Math.atan2(dx, dz);
 
       const rail = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.06, len, 8),
+        new THREE.CylinderGeometry(0.06 * widthScale, 0.06 * widthScale, len, 8),
         this.paintedMetalMaterial
       );
       rail.rotation.x = Math.PI / 2;
@@ -574,7 +642,7 @@ export class Terrain {
     // Posts
     for (const pos of [[0, -5 * s], [0, -1.5 * s], [2, -1.5 * s], [2, 2 * s], [2, 5 * s]]) {
       const post = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.05, 0.07, railHeight, 6),
+        new THREE.CylinderGeometry(0.05 * widthScale, 0.07 * widthScale, railHeight, 6),
         this.rockMaterial
       );
       post.position.set(pos[0], railHeight / 2, pos[1]);
@@ -584,7 +652,7 @@ export class Terrain {
     return group;
   }
 
-  createKinkRail(lengthScale = 1) {
+  createKinkRail(lengthScale = 1, widthScale = 1) {
     const group = new THREE.Group();
     const railHeight = 1.8;
     const kinkDrop = 0.6;
@@ -600,7 +668,7 @@ export class Terrain {
     // Flat 1
     const flat1Len = 4 * s;
     const r1 = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.06, flat1Len, 8),
+      new THREE.CylinderGeometry(0.06 * widthScale, 0.06 * widthScale, flat1Len, 8),
       this.metalMaterial
     );
     r1.rotation.x = Math.PI / 2;
@@ -613,7 +681,7 @@ export class Terrain {
     const kinkLen = Math.sqrt(kinkZLen ** 2 + kinkDrop ** 2);
     const kinkAngle = Math.atan2(kinkDrop, kinkZLen);
     const kink = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.06, kinkLen, 8),
+      new THREE.CylinderGeometry(0.06 * widthScale, 0.06 * widthScale, kinkLen, 8),
       this.rustyMetalMaterial
     );
     kink.rotation.x = Math.PI / 2 - kinkAngle;
@@ -624,7 +692,7 @@ export class Terrain {
     // Flat 2
     const flat2Len = 4 * s;
     const r2 = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.06, flat2Len, 8),
+      new THREE.CylinderGeometry(0.06 * widthScale, 0.06 * widthScale, flat2Len, 8),
       this.metalMaterial
     );
     r2.rotation.x = Math.PI / 2;
@@ -636,7 +704,7 @@ export class Terrain {
     for (const z of [-5 * s, -1 * s, 1 * s, 5 * s]) {
       const h = z <= -1 * s ? railHeight : railHeight - kinkDrop;
       const post = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.05, 0.07, h, 6),
+        new THREE.CylinderGeometry(0.05 * widthScale, 0.07 * widthScale, h, 6),
         this.rockMaterial
       );
       post.position.set(0, h / 2, z);
@@ -743,6 +811,109 @@ export class Terrain {
     line.rotation.z = Math.PI / 2;
     line.position.y = poleHeight;
     group.add(line);
+
+    return group;
+  }
+
+  createFinishLine() {
+    const group = new THREE.Group();
+    const poleHeight = 8;
+    const gateWidth = 30;
+
+    // Finish line material — checkered black and white
+    const finishMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.3,
+    });
+    const finishMatDark = new THREE.MeshStandardMaterial({
+      color: 0x111111, emissive: 0x000000, emissiveIntensity: 0,
+    });
+
+    // Two tall poles
+    for (const side of [-gateWidth / 2, gateWidth / 2]) {
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.2, 0.2, poleHeight, 8),
+        new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.6, roughness: 0.2 })
+      );
+      pole.position.set(side, poleHeight / 2, 0);
+      pole.castShadow = true;
+      group.add(pole);
+
+      // Gold sphere on top
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.4, 8, 8),
+        new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.1, emissive: 0xffaa00, emissiveIntensity: 0.3 })
+      );
+      sphere.position.set(side, poleHeight + 0.4, 0);
+      group.add(sphere);
+    }
+
+    // Top crossbar
+    const crossbar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.15, 0.15, gateWidth, 8),
+      new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.6, roughness: 0.2 })
+    );
+    crossbar.rotation.z = Math.PI / 2;
+    crossbar.position.y = poleHeight;
+    crossbar.castShadow = true;
+    group.add(crossbar);
+
+    // Banner — checkered pattern using multiple quads
+    const bannerHeight = 1.8;
+    const bannerY = poleHeight - bannerHeight / 2 - 0.3;
+    const checkerSize = gateWidth / 16;
+    const rows = Math.round(bannerHeight / checkerSize);
+    const cols = 16;
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const isBlack = (r + c) % 2 === 0;
+        const tile = new THREE.Mesh(
+          new THREE.PlaneGeometry(checkerSize, checkerSize),
+          isBlack ? finishMatDark : finishMat
+        );
+        tile.position.set(
+          -gateWidth / 2 + checkerSize / 2 + c * checkerSize,
+          bannerY + checkerSize / 2 + r * checkerSize - bannerHeight / 2,
+          0
+        );
+        // Double-sided so visible from both directions
+        tile.material.side = THREE.DoubleSide;
+        group.add(tile);
+      }
+    }
+
+    // "FINISH" text poles (decorative side markers)
+    for (const side of [-gateWidth / 2 - 3, gateWidth / 2 + 3]) {
+      const marker = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.08, 0.08, 5, 6),
+        new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xcc0000, emissiveIntensity: 0.3 })
+      );
+      marker.position.set(side, 2.5, 0);
+      marker.castShadow = true;
+      group.add(marker);
+
+      // Red flag
+      const flag = new THREE.Mesh(
+        new THREE.PlaneGeometry(2, 1),
+        new THREE.MeshStandardMaterial({
+          color: 0xff0000, side: THREE.DoubleSide,
+          emissive: 0xff2200, emissiveIntensity: 0.3,
+        })
+      );
+      flag.position.set(side + (side > 0 ? -1 : 1) * 1, 4.5, 0);
+      group.add(flag);
+    }
+
+    // Ground line — bright stripe across the snow
+    const groundLine = new THREE.Mesh(
+      new THREE.BoxGeometry(gateWidth + 6, 0.05, 1.5),
+      new THREE.MeshStandardMaterial({
+        color: 0xff3333, emissive: 0xff2222, emissiveIntensity: 0.4,
+      })
+    );
+    groundLine.position.y = 0.03;
+    groundLine.receiveShadow = true;
+    group.add(groundLine);
 
     return group;
   }
