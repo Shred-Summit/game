@@ -56,7 +56,8 @@ export class Player {
     // Crash
     this.crashed = false;
     this.crashTimer = 0;
-    this.landingTolerance = Math.PI * (35 / 180); // 35 degrees — clean landings only
+    this.landingTolerance = Math.PI * (45 / 180); // 45 degrees — forgiving landings
+    this.rollLandingTolerance = Math.PI * (90 / 180); // 90 degrees — roll is hard to control
 
     // Capsule hitbox: center = position, radius, half-height
     this.capsuleRadius = 0.4;
@@ -336,7 +337,7 @@ export class Player {
 
         if (flipRemainder > this.landingTolerance ||
             spinRemainder > this.landingTolerance ||
-            rollRemainder > this.landingTolerance) {
+            rollRemainder > this.rollLandingTolerance) {
           this.triggerCrash();
           return this.getState(terrain);
         }
@@ -716,12 +717,24 @@ export class Player {
         this.angularVelocity.y = rampOrBrake(this.angularVelocity.y, corkSpinTarget, true);
         this.angularVelocity.z = rampOrBrake(this.angularVelocity.z, corkRollTarget, true);
       } else {
-        // --- FLIP (W/S) — ramp up while held, hard stop on release ---
+        // --- FLIP (W/S) — ramp up while held, auto-snap on release ---
         // Negative X = frontflip (W), Positive X = backflip (S)
-        const flipDir = input.flipForward ? -1 : input.flipBackward ? 1 : 0;
-        this.angularVelocity.x = rampOrBrake(
-          this.angularVelocity.x, flipDir * flipTarget, flipping
-        );
+        if (flipping) {
+          const flipDir = input.flipForward ? -1 : 1;
+          this.angularVelocity.x = rampOrBrake(
+            this.angularVelocity.x, flipDir * flipTarget, true
+          );
+        } else {
+          // Auto-snap flip toward nearest clean 360°
+          const nearestCleanFlip = Math.round(this.trickRotation.x / (Math.PI * 2)) * Math.PI * 2;
+          const flipError = nearestCleanFlip - this.trickRotation.x;
+          if (Math.abs(flipError) > 0.05 && Math.abs(this.angularVelocity.x) < 3.0) {
+            const snapTarget = Math.sign(flipError) * Math.min(Math.abs(flipError) * 4, 5.0);
+            this.angularVelocity.x = rampOrBrake(this.angularVelocity.x, snapTarget, true);
+          } else {
+            this.angularVelocity.x = rampOrBrake(this.angularVelocity.x, 0, false);
+          }
+        }
 
         // --- SPIN (Q/E) — ramp up while held, hard stop on release ---
         const spinDir = input.spinLeft ? 1 : input.spinRight ? -1 : 0;
@@ -729,8 +742,16 @@ export class Player {
           this.angularVelocity.y, spinDir * spinTarget, spinning
         );
 
-        // Roll decays when not corking
-        this.angularVelocity.z = rampOrBrake(this.angularVelocity.z, 0, false);
+        // Roll auto-snaps toward nearest clean 360° when not corking
+        const nearestCleanRoll = Math.round(this.trickRotation.z / (Math.PI * 2)) * Math.PI * 2;
+        const rollError = nearestCleanRoll - this.trickRotation.z;
+        if (Math.abs(rollError) > 0.05) {
+          // Steer roll toward nearest clean rotation
+          const snapTarget = Math.sign(rollError) * Math.min(Math.abs(rollError) * 4, 6.0);
+          this.angularVelocity.z = rampOrBrake(this.angularVelocity.z, snapTarget, true);
+        } else {
+          this.angularVelocity.z = rampOrBrake(this.angularVelocity.z, 0, false);
+        }
       }
 
       // Air steer — meaningful directional control while airborne
