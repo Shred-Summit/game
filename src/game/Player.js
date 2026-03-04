@@ -180,21 +180,23 @@ export class Player {
     gloveR.position.set(0, -0.33, 0);
     this.elbowR.add(gloveR);
 
-    // Default arm pose
+    // Default arm pose — arms spread OUTWARD from body
     if (this.equipmentType === 'ski') {
-      this.shoulderL.rotation.z = 0.3;
-      this.shoulderL.rotation.x = 0.4;
-      this.elbowL.rotation.x = -0.4;
-      this.shoulderR.rotation.z = -0.3;
-      this.shoulderR.rotation.x = 0.4;
-      this.elbowR.rotation.x = -0.4;
+      // Ski: wide spread for holding poles, slight forward lean
+      this.shoulderL.rotation.z = 0.8;
+      this.shoulderL.rotation.x = 0.15;
+      this.elbowL.rotation.x = -0.2;
+      this.shoulderR.rotation.z = -0.8;
+      this.shoulderR.rotation.x = 0.15;
+      this.elbowR.rotation.x = -0.2;
     } else {
-      this.shoulderL.rotation.z = 0.4;
-      this.shoulderL.rotation.x = 0.3;
-      this.elbowL.rotation.x = -0.3;
-      this.shoulderR.rotation.z = -0.4;
-      this.shoulderR.rotation.x = 0.3;
-      this.elbowR.rotation.x = -0.3;
+      // Snowboard: arms spread out to the sides for balance
+      this.shoulderL.rotation.z = 0.7;
+      this.shoulderL.rotation.x = 0.1;
+      this.elbowL.rotation.x = -0.2;
+      this.shoulderR.rotation.z = -0.7;
+      this.shoulderR.rotation.x = 0.1;
+      this.elbowR.rotation.x = -0.2;
     }
 
     // Ski poles (attached to forearms)
@@ -1242,17 +1244,17 @@ export class Player {
     this.riderGroup.position.set(0, 0, 0);
     this.riderGroup.rotation.set(0, this.STANCE_YAW, 0);
 
-    // Reset all joints to default riding pose
+    // Reset all joints to default riding pose — arms spread outward
     if (this.equipmentType === 'ski') {
-      this.shoulderL.rotation.set(0.4, 0, 0.3);
-      this.elbowL.rotation.set(-0.4, 0, 0);
-      this.shoulderR.rotation.set(0.4, 0, -0.3);
-      this.elbowR.rotation.set(-0.4, 0, 0);
+      this.shoulderL.rotation.set(0.15, 0, 0.8);
+      this.elbowL.rotation.set(-0.2, 0, 0);
+      this.shoulderR.rotation.set(0.15, 0, -0.8);
+      this.elbowR.rotation.set(-0.2, 0, 0);
     } else {
-      this.shoulderL.rotation.set(0.3, 0, 0.4);
-      this.elbowL.rotation.set(-0.3, 0, 0);
-      this.shoulderR.rotation.set(0.3, 0, -0.4);
-      this.elbowR.rotation.set(-0.3, 0, 0);
+      this.shoulderL.rotation.set(0.1, 0, 0.7);
+      this.elbowL.rotation.set(-0.2, 0, 0);
+      this.shoulderR.rotation.set(0.1, 0, -0.7);
+      this.elbowR.rotation.set(-0.2, 0, 0);
     }
     this.hipL.rotation.set(-0.3, 0, 0);
     this.kneeL.rotation.set(0.6, 0, 0);
