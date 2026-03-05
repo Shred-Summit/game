@@ -13,9 +13,12 @@ export class Player {
 
     this.grounded = false;
     this.airTime = 0;
+    this.baseMaxSpeed = 35;
     this.maxSpeed = 35;  // ~126 km/h — fast but not absurd
     this.gravity = -25;
+    this.baseJumpForce = 8;
     this.jumpForce = 8;
+    this.flexMultiplier = 1.0;
 
     // Carving system — smooth laid-down carves
     this.turnRate = 0;            // current turning angular velocity (rad/s)
@@ -53,6 +56,10 @@ export class Player {
     // Kicker launch cooldown — prevents re-launch when landing back on same kicker
     this.kickerCooldown = 0;
     this.kickerPopBoost = 0; // extra air from pressing space on a kicker
+
+    // Landing zone tracking
+    this.landingQuality = null; // null, 'perfect', 'clean'
+    this.landingZoneSlopeAbsorb = 0; // 0-0.7 slope absorption factor
 
     // Crash
     this.crashed = false;
@@ -396,19 +403,50 @@ export class Player {
     if (nextY <= surfaceH + groundOffset) {
       this.position.y = surfaceH + groundOffset;
 
+      // Detect landing zone and compute slope absorption
+      this.landingZoneSlopeAbsorb = 0;
+      this.landingQuality = null;
+
+      if (wasInAir && this.airTime > 0.4) {
+        for (const ramp of terrain.ramps) {
+          if (ramp.type !== 'kicker' || ramp.landingZoneStartZ === undefined) continue;
+          const dx = this.position.x - ramp.position.x;
+          const z = this.position.z;
+          if (Math.abs(dx) < ramp.landingWidth / 2 &&
+              z < ramp.landingZoneStartZ && z > ramp.landingZoneEndZ) {
+            const totalLen = ramp.landingZoneStartZ - ramp.landingZoneEndZ;
+            const t = (ramp.landingZoneStartZ - z) / totalLen;
+            // Piecewise: flat table then linear slope
+            const tableFrac = ramp.landingGap / (ramp.landingGap + ramp.landingLength);
+            if (t <= tableFrac) {
+              // On the knuckle/table — no slope absorption, harsh landing
+              this.landingZoneSlopeAbsorb = 0;
+              this.landingQuality = 'clean';
+            } else {
+              // On the slope — linear slope gives constant absorption
+              const heightDrop = ramp.landingTopHeight - ramp.landingBottomHeight;
+              const slopeLen = ramp.landingLength;
+              const slopeAngle = heightDrop / slopeLen; // rise/run
+              this.landingZoneSlopeAbsorb = Math.min(slopeAngle * 0.8, 0.7);
+              // Sweet spot: middle of the slope section (slopeT 0.3-0.7)
+              const slopeT = (t - tableFrac) / (1 - tableFrac);
+              this.landingQuality = (slopeT >= 0.25 && slopeT <= 0.75) ? 'perfect' : 'clean';
+            }
+            break;
+          }
+        }
+      }
+
       // Crash check on landing — must land within 35° of clean rotation
       if (wasInAir && this.airTime > 0.4) {
-        // Check flip axis (forward/back) — must be near a full 360° rotation
         const rawFlip = this.trickRotation.x;
         const nearestFlipRot = Math.round(rawFlip / (Math.PI * 2)) * Math.PI * 2;
         const flipRemainder = Math.abs(rawFlip - nearestFlipRot);
 
-        // Check spin axis (Y rotation) — must be near a 180° increment
         const rawSpin = this.trickRotation.y;
         const nearestSpinRot = Math.round(rawSpin / Math.PI) * Math.PI;
         const spinRemainder = Math.abs(rawSpin - nearestSpinRot);
 
-        // Check roll axis (sideways tilt from corks) — must be near a full 360°
         const rawRoll = this.trickRotation.z;
         const nearestRollRot = Math.round(rawRoll / (Math.PI * 2)) * Math.PI * 2;
         const rollRemainder = Math.abs(rawRoll - nearestRollRot);
@@ -421,23 +459,30 @@ export class Player {
         }
       }
 
-      // Fall damage — huge drops crash the player
-      if (this.velocity.y < -35) {
+      // Fall damage — landing zone slope absorbs vertical impact
+      const effectiveVY = this.velocity.y * (1 - this.landingZoneSlopeAbsorb);
+      if (effectiveVY < -35) {
         this.triggerCrash();
         return this.getState(terrain);
       }
 
       // Landing impact spring — trigger on landing
       if (wasInAir && this.airTime > 0.2) {
-        this.landingImpact = Math.min(Math.abs(this.velocity.y) / 20, 1.0);
+        this.landingImpact = Math.min(Math.abs(effectiveVY) / 20, 1.0);
         this.landingImpactVel = 0;
       }
 
-      // Slope-aware landing: convert some downward speed to forward speed
+      // Slope-aware landing: convert downward speed to forward speed
       if (this.velocity.y < 0) {
-        const normal = terrain.getSlopeNormalAt(this.position.x, this.position.z);
         const downSpeed = -this.velocity.y;
-        this.velocity.z -= (1.0 - normal.y) * downSpeed * 0.3;
+        if (this.landingZoneSlopeAbsorb > 0) {
+          // Landing zone: slope absorbs more impact, converts to speed
+          this.velocity.z -= this.landingZoneSlopeAbsorb * downSpeed * 0.8;
+        } else {
+          // Normal terrain landing
+          const normal = terrain.getSlopeNormalAt(this.position.x, this.position.z);
+          this.velocity.z -= (1.0 - normal.y) * downSpeed * 0.3;
+        }
         this.velocity.y = 0;
       }
 
@@ -965,38 +1010,58 @@ export class Player {
   // The ramp raises them gradually. When they exit the lip, gravity takes over.
   getSurfaceHeight(terrain) {
     const baseH = terrain.getHeightAt(this.position.x, this.position.z);
-
-    // Skip kicker surface during cooldown (prevents re-launch loops)
-    if (this.kickerCooldown > 0) return baseH;
-
-    let kickerBoost = 0;
+    let boost = 0;
 
     for (const ramp of terrain.ramps) {
       if (ramp.type !== 'kicker') continue;
 
-      const dx = this.position.x - ramp.position.x;
-      const dz = this.position.z - ramp.position.z;
+      // Check kicker ramp surface (skip during cooldown to prevent re-launch)
+      if (this.kickerCooldown <= 0) {
+        const dx = this.position.x - ramp.position.x;
+        const dz = this.position.z - ramp.position.z;
 
-      const halfW = ramp.width / 2;
-      const halfL = ramp.length / 2;
-      if (Math.abs(dx) < halfW && Math.abs(dz) < halfL) {
-        // Player is within the kicker footprint (matches visual mesh extents)
-        // t = 0 at entry (positive Z side), t = 1 at lip (negative Z side)
-        const t = 1.0 - (dz + halfL) / ramp.length;
-        const clampedT = Math.max(0, Math.min(1, t));
+        const halfW = ramp.width / 2;
+        const halfL = ramp.length / 2;
+        if (Math.abs(dx) < halfW && Math.abs(dz) < halfL) {
+          const t = 1.0 - (dz + halfL) / ramp.length;
+          const clampedT = Math.max(0, Math.min(1, t));
+          const rampH = ramp.lipHeight * Math.pow(clampedT, 0.65);
+          boost = Math.max(boost, rampH);
 
-        // Ramp surface: power curve matching the visual mesh profile
-        const rampH = ramp.lipHeight * Math.pow(clampedT, 0.65);
-        kickerBoost = Math.max(kickerBoost, rampH);
+          if (this.grounded && clampedT > 0.1) {
+            this.onKicker = ramp;
+            this.kickerProgress = clampedT;
+          }
+        }
+      }
 
-        if (this.grounded && clampedT > 0.1) {
-          this.onKicker = ramp;
-          this.kickerProgress = clampedT;
+      // Check landing zone surface (always active, even during cooldown)
+      if (ramp.landingZoneStartZ !== undefined) {
+        const dx = this.position.x - ramp.position.x;
+        const z = this.position.z;
+
+        if (Math.abs(dx) < ramp.landingWidth / 2 &&
+            z < ramp.landingZoneStartZ && z > ramp.landingZoneEndZ) {
+          const totalLen = ramp.landingZoneStartZ - ramp.landingZoneEndZ;
+          const t = (ramp.landingZoneStartZ - z) / totalLen; // 0=top, 1=bottom
+          // Piecewise: flat table then linear slope (matching visual mesh)
+          const tableFrac = ramp.landingGap / (ramp.landingGap + ramp.landingLength);
+          let landingH;
+          if (t <= tableFrac) {
+            landingH = ramp.landingTopHeight; // flat table/knuckle
+          } else {
+            const slopeT = (t - tableFrac) / (1 - tableFrac);
+            landingH = ramp.landingTopHeight * (1 - slopeT) + ramp.landingBottomHeight * slopeT;
+          }
+
+          if (landingH > baseH) {
+            boost = Math.max(boost, landingH - baseH);
+          }
         }
       }
     }
 
-    return baseH + kickerBoost;
+    return baseH + boost;
   }
 
   updateKickerRide(terrain, dt) {
@@ -1201,6 +1266,12 @@ export class Player {
     }
   }
 
+  applyBoardStats(speed, pop, flex) {
+    this.maxSpeed = this.baseMaxSpeed * (0.85 + speed * 0.03);
+    this.jumpForce = this.baseJumpForce * (0.85 + pop * 0.03);
+    this.flexMultiplier = 0.85 + flex * 0.03;
+  }
+
   triggerCrash() {
     this.crashed = true;
     this.crashTimer = 0;
@@ -1332,6 +1403,8 @@ export class Player {
       boardslideType: this.boardslideType,
       grindTime: this.grindTime,
       isCork: this.isCorkingThisJump,
+      flexMultiplier: this.flexMultiplier,
+      landingQuality: this.landingQuality,
     };
   }
 }

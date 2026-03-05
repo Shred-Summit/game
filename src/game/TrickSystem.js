@@ -239,6 +239,12 @@ export class TrickSystem {
 
     if (tricks.length > 0 && trickScore > 0) {
       trickScore = Math.floor(trickScore * this.comboMultiplier);
+      // Apply board flex multiplier
+      trickScore = Math.floor(trickScore * (playerState.flexMultiplier || 1.0));
+      // Sweet spot landing bonus: 1.25x for landing in the middle of a landing zone
+      if (playerState.landingQuality === 'perfect') {
+        trickScore = Math.floor(trickScore * 1.25);
+      }
       this.totalScore += trickScore;
       this.lastTrickName = tricks.join(' + ');
       this.lastTrickPoints = trickScore;
@@ -260,6 +266,7 @@ export class TrickSystem {
         isCork: hasCork,
         points: trickScore,
         comboMultiplier: this.comboMultiplier,
+        landingQuality: playerState.landingQuality,
       };
     }
 
@@ -297,6 +304,7 @@ export class TrickSystem {
 
     if (tricks.length > 0 && trickScore > 0) {
       trickScore = Math.floor(trickScore * this.comboMultiplier);
+      trickScore = Math.floor(trickScore * (playerState.flexMultiplier || 1.0));
       this.totalScore += trickScore;
       this.lastTrickName = tricks.join(' + ');
       this.lastTrickPoints = trickScore;

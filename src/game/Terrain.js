@@ -279,11 +279,26 @@ export class Terrain {
       feature.position.set(x, minY, featureGlobalZ);
       this.scene.add(feature);
       chunk.objects.push(feature);
-      this.ramps.push({
+      const rampData = {
         mesh: feature,
         position: new THREE.Vector3(x, minY, featureGlobalZ),
         type, width, length, size, lipHeight, lipAngle, surfaceHeight,
-      });
+      };
+
+      // Store landing zone data for kickers
+      if (type === 'kicker' && feature.userData.landing) {
+        const ld = feature.userData.landing;
+        const lipZ = featureGlobalZ - length / 2; // lip Z in world coords
+        rampData.landingZoneStartZ = lipZ;
+        rampData.landingZoneEndZ = lipZ - ld.gap - ld.length;
+        rampData.landingTopHeight = minY + ld.topLocalY;
+        rampData.landingBottomHeight = this.computeHeight(x, lipZ - ld.gap - ld.length) - 0.3;
+        rampData.landingWidth = ld.width;
+        rampData.landingGap = ld.gap;
+        rampData.landingLength = ld.length;
+      }
+
+      this.ramps.push(rampData);
     }
 
     // Checkpoints
@@ -324,7 +339,7 @@ export class Terrain {
     return globalZ <= -2400 ? 2 : 1;
   }
 
-  // --- JUMPS (sized by "feet" — 30, 40, 50, 60) ---
+  // --- JUMPS (sized by "feet" — 30, 40, 50, 60, 75, 100, 125, 150) ---
 
   createJump(feet) {
     const group = new THREE.Group();
@@ -363,7 +378,7 @@ export class Terrain {
     mesh.receiveShadow = true;
     group.add(mesh);
 
-    // Snow side walls
+    // Snow side walls for ramp
     for (const side of [-1, 1]) {
       const wallShape = new THREE.Shape();
       wallShape.moveTo(0, 0);
@@ -385,6 +400,93 @@ export class Terrain {
       wall.castShadow = true;
       group.add(wall);
     }
+
+    // === LANDING ZONE ===
+    // Real park jump: ramp → lip → flat table/knuckle → linear landing slope → runout
+    const landingGap = 2.0 * scale;       // flat table after lip (knuckle)
+    const landingLen = 22.0 * scale;       // long downhill landing slope
+    const landingWidth = rampWidth * 1.4;  // wider than ramp
+    const landingHalfW = landingWidth / 2;
+    const totalLandingDist = landingGap + landingLen;
+    // Landing starts at lip height and drops to terrain level at the bottom
+    const landingTopY = rampHeight * 0.92;
+    const landingEndY = -(totalLandingDist * this.slopeAngle);
+
+    // Landing profile: flat table then straight slope (like real park jumps)
+    const landingSegs = 20;
+    const tableFrac = landingGap / totalLandingDist;
+    const landingShape = new THREE.Shape();
+    landingShape.moveTo(0, landingTopY);
+    for (let i = 0; i <= landingSegs; i++) {
+      const t = i / landingSegs;
+      const x = t * (totalLandingDist + 1.5 * scale);
+      let y;
+      if (t <= tableFrac) {
+        // Flat table / knuckle section
+        y = landingTopY;
+      } else {
+        // Linear slope from table height down to bottom
+        const slopeT = (t - tableFrac) / (1 - tableFrac);
+        y = landingTopY * (1 - slopeT) + landingEndY * slopeT;
+      }
+      landingShape.lineTo(x, y);
+    }
+    // Close underneath with generous fill depth
+    const fillBottom = landingEndY - 5 * scale;
+    landingShape.lineTo(totalLandingDist + 1.5 * scale, fillBottom);
+    landingShape.lineTo(0, fillBottom);
+    landingShape.lineTo(0, landingTopY);
+
+    const landingGeo = new THREE.ExtrudeGeometry(landingShape, {
+      depth: landingWidth, bevelEnabled: false,
+    });
+    landingGeo.rotateY(Math.PI / 2);
+    landingGeo.translate(-landingHalfW, 0, -rampLength / 2);
+    landingGeo.computeVertexNormals();
+
+    const landingMesh = new THREE.Mesh(landingGeo, this.rampMaterial);
+    landingMesh.castShadow = true;
+    landingMesh.receiveShadow = true;
+    group.add(landingMesh);
+
+    // Landing snow sidewalls
+    for (const side of [-1, 1]) {
+      const lWallShape = new THREE.Shape();
+      lWallShape.moveTo(0, landingTopY + 0.15 * scale);
+      for (let i = 0; i <= landingSegs; i++) {
+        const t = i / landingSegs;
+        const x = t * totalLandingDist;
+        let y;
+        if (t <= tableFrac) {
+          y = landingTopY + 0.15 * scale;
+        } else {
+          const slopeT = (t - tableFrac) / (1 - tableFrac);
+          y = landingTopY * (1 - slopeT) + landingEndY * slopeT + 0.15 * scale;
+        }
+        lWallShape.lineTo(x, y);
+      }
+      lWallShape.lineTo(totalLandingDist, landingEndY);
+      lWallShape.lineTo(0, landingEndY);
+      lWallShape.lineTo(0, landingTopY + 0.15 * scale);
+
+      const lWallGeo = new THREE.ExtrudeGeometry(lWallShape, {
+        depth: 0.25 * scale, bevelEnabled: false,
+      });
+      lWallGeo.rotateY(Math.PI / 2);
+      lWallGeo.translate(side * (landingHalfW + 0.12 * scale), 0, -rampLength / 2);
+      const lWall = new THREE.Mesh(lWallGeo, this.snowMaterial);
+      lWall.castShadow = true;
+      group.add(lWall);
+    }
+
+    // Store landing metadata for physics
+    group.userData.landing = {
+      gap: landingGap,
+      length: landingLen,
+      width: landingWidth,
+      topLocalY: landingTopY,
+      endLocalY: landingEndY,
+    };
 
     // Size label pole
     const labelPole = new THREE.Mesh(
