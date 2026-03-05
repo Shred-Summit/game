@@ -590,17 +590,8 @@ export class Game {
   }
 
   initCarveTrail() {
-    const MAX_TRAIL = 2000; // max trail segments
+    const MAX_TRAIL = 2000;
     this.trailMax = MAX_TRAIL;
-    this.trailIndex = 0;
-    this.trailCount = 0;
-    this.lastTrailPos = null;
-
-    // Two parallel lines (left and right edge of board)
-    const positions = new Float32Array(MAX_TRAIL * 2 * 3); // 2 verts per segment
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setIndex([]);
 
     const material = new THREE.MeshBasicMaterial({
       color: 0xc8dde8,
@@ -610,15 +601,36 @@ export class Game {
       depthWrite: false,
     });
 
-    this.trailMesh = new THREE.Mesh(geometry, material);
-    this.trailMesh.frustumCulled = false;
-    this.scene.add(this.trailMesh);
-    this.trailIndices = [];
+    // Trail 1 (snowboard single trail, or ski left trail)
+    this.trail1 = this._createTrailMesh(MAX_TRAIL, material);
+    // Trail 2 (ski right trail only)
+    this.trail2 = this._createTrailMesh(MAX_TRAIL, material);
+    this.trail2.mesh.visible = false;
+  }
+
+  _createTrailMesh(maxSegs, material) {
+    const positions = new Float32Array(maxSegs * 2 * 3);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setIndex([]);
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.frustumCulled = false;
+    this.scene.add(mesh);
+    return { mesh, indices: [], index: 0, count: 0, lastPos: null };
+  }
+
+  _resetTrail(trail) {
+    trail.index = 0;
+    trail.count = 0;
+    trail.lastPos = null;
+    trail.indices = [];
+    trail.mesh.geometry.setIndex([]);
   }
 
   updateCarveTrail(playerState) {
     if (!playerState.grounded || playerState.speed < 2) {
-      this.lastTrailPos = null;
+      this.trail1.lastPos = null;
+      this.trail2.lastPos = null;
       return;
     }
 
@@ -626,48 +638,67 @@ export class Game {
     const heading = this.player.heading;
 
     // Don't add points too close together
-    if (this.lastTrailPos) {
-      const dx = pos.x - this.lastTrailPos.x;
-      const dz = pos.z - this.lastTrailPos.z;
-      if (dx * dx + dz * dz < 0.25) return; // min 0.5m between points
+    if (this.trail1.lastPos) {
+      const dx = pos.x - this.trail1.lastPos.x;
+      const dz = pos.z - this.trail1.lastPos.z;
+      if (dx * dx + dz * dz < 0.25) return;
     }
 
-    // Board width offset perpendicular to heading
-    const halfWidth = 0.2;
-    const perpX = Math.cos(heading) * halfWidth;
-    const perpZ = -Math.sin(heading) * halfWidth;
-    const y = pos.y - 0.06; // just above snow surface
+    const perpX = Math.cos(heading);
+    const perpZ = -Math.sin(heading);
+    const y = pos.y - 0.06;
 
-    const positions = this.trailMesh.geometry.attributes.position;
-    const i = this.trailIndex;
-    const vi = i * 2; // 2 verts per segment
+    if (this.selectedEquipment === 'ski') {
+      // Two separate ski trails with gap between them
+      const skiSpacing = 0.18; // distance from center to each ski
+      const skiWidth = 0.06;   // narrow ski edge width
+      this.trail2.mesh.visible = true;
 
-    // Left edge
-    positions.setXYZ(vi, pos.x - perpX, y, pos.z - perpZ);
-    // Right edge
-    positions.setXYZ(vi + 1, pos.x + perpX, y, pos.z + perpZ);
+      // Left ski
+      const lx = pos.x - perpX * skiSpacing;
+      const lz = pos.z - perpZ * skiSpacing;
+      this._addTrailSegment(this.trail1, lx, y, lz, perpX * skiWidth, perpZ * skiWidth);
 
-    // Build triangle strip indices connecting to previous segment
-    if (this.lastTrailPos !== null) {
+      // Right ski
+      const rx = pos.x + perpX * skiSpacing;
+      const rz = pos.z + perpZ * skiSpacing;
+      this._addTrailSegment(this.trail2, rx, y, rz, perpX * skiWidth, perpZ * skiWidth);
+    } else {
+      // Single snowboard trail
+      const halfWidth = 0.2;
+      this.trail2.mesh.visible = false;
+      this._addTrailSegment(this.trail1, pos.x, y, pos.z, perpX * halfWidth, perpZ * halfWidth);
+    }
+
+    this.trail1.lastPos = { x: pos.x, z: pos.z };
+    this.trail2.lastPos = { x: pos.x, z: pos.z };
+  }
+
+  _addTrailSegment(trail, cx, y, cz, offX, offZ) {
+    const positions = trail.mesh.geometry.attributes.position;
+    const i = trail.index;
+    const vi = i * 2;
+
+    positions.setXYZ(vi, cx - offX, y, cz - offZ);
+    positions.setXYZ(vi + 1, cx + offX, y, cz + offZ);
+
+    if (trail.lastPos !== null) {
       const prev = ((i - 1 + this.trailMax) % this.trailMax) * 2;
       const curr = vi;
-      // Two triangles forming a quad between prev and curr
-      this.trailIndices.push(prev, prev + 1, curr);
-      this.trailIndices.push(curr, prev + 1, curr + 1);
+      trail.indices.push(prev, prev + 1, curr);
+      trail.indices.push(curr, prev + 1, curr + 1);
 
-      // Limit indices to prevent unbounded growth
       const maxIndices = this.trailMax * 6;
-      if (this.trailIndices.length > maxIndices) {
-        this.trailIndices.splice(0, 6); // remove oldest quad
+      if (trail.indices.length > maxIndices) {
+        trail.indices.splice(0, 6);
       }
     }
 
-    this.trailMesh.geometry.setIndex(this.trailIndices);
+    trail.mesh.geometry.setIndex(trail.indices);
     positions.needsUpdate = true;
 
-    this.trailIndex = (this.trailIndex + 1) % this.trailMax;
-    this.trailCount = Math.min(this.trailCount + 1, this.trailMax);
-    this.lastTrailPos = { x: pos.x, z: pos.z };
+    trail.index = (trail.index + 1) % this.trailMax;
+    trail.count = Math.min(trail.count + 1, this.trailMax);
   }
 
   animate() {
@@ -1013,11 +1044,8 @@ export class Game {
     this.currentCameraPos.copy(startPos.clone().add(this.cameraOffset));
 
     // Reset trail
-    this.trailIndex = 0;
-    this.trailCount = 0;
-    this.lastTrailPos = null;
-    this.trailIndices = [];
-    this.trailMesh.geometry.setIndex([]);
+    this._resetTrail(this.trail1);
+    this._resetTrail(this.trail2);
   }
 
   // ---- 3D LOBBY SCENE ----
