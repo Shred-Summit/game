@@ -11,6 +11,7 @@ export class TrickSystem {
     this.spinCount = 0;
     this.flipCount = 0;
     this.flipDirection = 0; // negative = frontflip (W), positive = backflip (S)
+    this.wasInverted = false; // head-under-body tracking for flip counting
     this.grabTime = 0;
     this.currentGrabType = null;
     this.grabTypes = new Set();
@@ -136,9 +137,14 @@ export class TrickSystem {
       this.spinCount = Math.floor(Math.abs(yRot) / Math.PI);
       this.rawSpinRadians = yRot;
 
+      // Count flips by head inversions: each time the head passes under the body
       const xRot = playerState.trickRotation.x;
-      this.flipCount = Math.floor(Math.abs(xRot) / Math.PI);
-      if (xRot !== 0) this.flipDirection = xRot; // track sign for front/backflip naming
+      const isInverted = Math.cos(xRot) < 0; // head below body when cos < 0
+      if (isInverted && !this.wasInverted) {
+        this.flipCount++;
+        if (xRot !== 0) this.flipDirection = xRot;
+      }
+      this.wasInverted = isInverted;
 
       // Track cork (flip + spin simultaneously)
       if (playerState.isCork) {
@@ -297,6 +303,7 @@ export class TrickSystem {
     this.spinCount = 0;
     this.flipCount = 0;
     this.flipDirection = 0;
+    this.wasInverted = false;
     this.grabTime = 0;
     this.grabTypes.clear();
     this.currentGrabType = null;
@@ -372,6 +379,7 @@ export class TrickSystem {
     this.spinCount = 0;
     this.flipCount = 0;
     this.flipDirection = 0;
+    this.wasInverted = false;
     this.grabTime = 0;
     this.grabTypes.clear();
     this.currentGrabType = null;

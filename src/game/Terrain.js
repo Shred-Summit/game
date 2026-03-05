@@ -157,8 +157,9 @@ export class Terrain {
         if (feature.userData.landing) {
           const ld = feature.userData.landing;
           const lipZ = featureGlobalZ - length / 2;
-          rampData.landingZoneStartZ = lipZ;
-          rampData.landingZoneEndZ = lipZ - ld.gap - ld.length;
+          // Landing starts after the air gap (space between lip and landing surface)
+          rampData.landingZoneStartZ = lipZ - (ld.airGap || 0);
+          rampData.landingZoneEndZ = lipZ - (ld.airGap || 0) - ld.gap - ld.length;
           rampData.landingTopHeight = minY + ld.topLocalY;
           rampData.landingBottomHeight = minY + ld.endLocalY;
           rampData.landingWidth = ld.width;
@@ -385,15 +386,16 @@ export class Terrain {
     }
 
     // === LANDING ZONE ===
-    // Real park jump: ramp → lip → flat table/knuckle → linear landing slope → runout
-    const landingGap = 2.0 * scale;       // flat table after lip (knuckle)
+    // Real park jump: ramp → lip → air gap → knuckle → linear landing slope → runout
+    const airGap = 3.0 * scale;           // air space between lip and landing start
+    const landingGap = 2.0 * scale;       // flat table after air gap (knuckle)
     const landingLen = 22.0 * scale;       // long downhill landing slope
     const landingWidth = rampWidth * 1.4;  // wider than ramp
     const landingHalfW = landingWidth / 2;
     const totalLandingDist = landingGap + landingLen;
-    // Landing starts at lip height and drops to terrain level at the bottom
-    const landingTopY = rampHeight * 0.92;
-    const landingEndY = -(totalLandingDist * this.slopeAngle);
+    // Landing starts below lip — drops across the air gap following terrain slope
+    const landingTopY = rampHeight * 0.92 - (airGap * this.slopeAngle);
+    const landingEndY = landingTopY - (totalLandingDist * this.slopeAngle);
 
     // Landing profile: flat table then straight slope (like real park jumps)
     const landingSegs = 20;
@@ -425,7 +427,7 @@ export class Terrain {
       depth: landingWidth, bevelEnabled: false,
     });
     landingGeo.rotateY(Math.PI / 2);
-    landingGeo.translate(-landingHalfW, 0, -rampLength / 2);
+    landingGeo.translate(-landingHalfW, 0, -rampLength / 2 - airGap);
     landingGeo.computeVertexNormals();
 
     const landingMesh = new THREE.Mesh(landingGeo, this.rampMaterial);
@@ -457,7 +459,7 @@ export class Terrain {
         depth: 0.25 * scale, bevelEnabled: false,
       });
       lWallGeo.rotateY(Math.PI / 2);
-      lWallGeo.translate(side * (landingHalfW + 0.12 * scale), 0, -rampLength / 2);
+      lWallGeo.translate(side * (landingHalfW + 0.12 * scale), 0, -rampLength / 2 - airGap);
       const lWall = new THREE.Mesh(lWallGeo, this.snowMaterial);
       lWall.castShadow = true;
       group.add(lWall);
@@ -465,6 +467,7 @@ export class Terrain {
 
     // Store landing metadata for physics
     group.userData.landing = {
+      airGap: airGap,
       gap: landingGap,
       length: landingLen,
       width: landingWidth,

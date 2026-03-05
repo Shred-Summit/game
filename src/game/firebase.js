@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, query, where, orderBy, limit, getDocs, serverTimestamp, doc, setDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, query, where, limit, getDocs, serverTimestamp, doc, setDoc, getDoc } from 'firebase/firestore';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 
 // ==========================================
@@ -140,22 +140,25 @@ export async function submitScore(dbRef, nickname, score, title = null) {
 }
 
 export async function fetchWorldwideScores(dbRef, maxResults = 20) {
-  if (!dbRef) return [];
+  if (!dbRef) return null;
   try {
     const weekId = getWeekId();
+    // Use only equality filter (no orderBy) to avoid requiring a composite index.
+    // Sort client-side instead.
     const q = query(
       collection(dbRef, 'scores'),
       where('weekId', '==', weekId),
-      orderBy('score', 'desc'),
-      limit(maxResults),
+      limit(500),
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(d => ({
+    const scores = snapshot.docs.map(d => ({
       id: d.id,
       ...d.data(),
     }));
+    scores.sort((a, b) => b.score - a.score);
+    return scores.slice(0, maxResults);
   } catch (e) {
     console.warn('Failed to fetch worldwide scores:', e);
-    return [];
+    return null;
   }
 }

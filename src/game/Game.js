@@ -450,8 +450,12 @@ export class Game {
           // Deselect siblings
           group.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
           swatch.classList.add('selected');
-          // Apply color to player
+          // Apply color to player (skip if shop item overrides this part)
           const colorVal = parseInt(swatch.dataset.color);
+          if (part === 'board' && this.shop.getEquippedItem('board')) {
+            // Shop board/ski equipped — don't let swatch override
+            return;
+          }
           this.player.setColor(part, colorVal);
         });
       });
@@ -943,24 +947,38 @@ export class Game {
     this.ui.worldwideError.style.display = 'none';
     this.ui.worldwideEntries.innerHTML = '';
 
-    // Submit score to Firebase (include ride pass title)
-    const title = this.ridePass.getSelectedTitle();
-    await submitScore(db, nickname, finalScore, title);
+    try {
+      // Submit score to Firebase (include ride pass title)
+      const title = this.ridePass.getSelectedTitle();
+      await submitScore(db, nickname, finalScore, title);
 
-    // Fetch worldwide leaderboard
-    const scores = await fetchWorldwideScores(db, 20);
+      // Fetch worldwide leaderboard (returns null on error, [] on empty)
+      const scores = await fetchWorldwideScores(db, 20);
 
-    if (scores.length === 0 && !db) {
-      // Firebase not available
+      this.ui.worldwideLoading.style.display = 'none';
+
+      if (scores === null) {
+        // Firebase unavailable or query failed
+        this.ui.worldwideError.style.display = 'block';
+        this.ui.worldwideError.textContent = 'OFFLINE — CHECK CONNECTION';
+        return;
+      }
+
+      if (scores.length === 0) {
+        // Connected but no scores yet this week
+        this.ui.worldwideError.style.display = 'block';
+        this.ui.worldwideError.textContent = 'NO SCORES THIS WEEK — BE THE FIRST!';
+        return;
+      }
+
+      this.worldwideScores = scores;
+      this.renderWorldwideLeaderboard(finalScore, nickname);
+    } catch (e) {
+      console.warn('Worldwide leaderboard error:', e);
       this.ui.worldwideLoading.style.display = 'none';
       this.ui.worldwideError.style.display = 'block';
       this.ui.worldwideError.textContent = 'OFFLINE — CHECK CONNECTION';
-      return;
     }
-
-    this.ui.worldwideLoading.style.display = 'none';
-    this.worldwideScores = scores;
-    this.renderWorldwideLeaderboard(finalScore, nickname);
   }
 
   renderWorldwideLeaderboard(currentScore, currentNickname) {
@@ -1668,17 +1686,21 @@ export class Game {
   applyEquippedItems() {
     const equipped = this.shop.getEquipped();
 
-    // Apply clothing colors
+    // Apply clothing colors + baggy pants
+    let isBaggy = false;
     for (const category of ['jacket', 'pants', 'helmet']) {
       const item = this.shop.getEquippedItem(category);
       if (item) {
         this.player.setColor(category, item.color);
+        if (category === 'pants' && item.baggy) isBaggy = true;
       }
     }
+    this.player.setBaggyPants(isBaggy);
 
-    // Apply board color and stats
+    // Apply board/ski color and stats
     const boardItem = this.shop.getEquippedItem('board');
     if (boardItem && boardItem.stats) {
+      // Always apply equipped board/ski color (overrides lobby swatch)
       this.player.setColor('board', boardItem.color);
       this.player.applyBoardStats(boardItem.stats.speed, boardItem.stats.pop, boardItem.stats.flex);
     } else {

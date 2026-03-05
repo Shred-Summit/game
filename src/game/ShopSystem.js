@@ -52,12 +52,12 @@ const ITEMS = [
   { id: 'yes-standard', brand: 'YES.', name: 'Standard', category: 'board', equipType: 'snowboard', tier: B, cost: 3, color: 0xf9a825, stats: { speed: 7, pop: 6, flex: 8 }, style: 'All-Mountain' },
 
   // === SKIS (Board - 3 tokens) ===
-  { id: '1000skis-rival', brand: '1000 SKIS', name: 'Rival', category: 'board', equipType: 'ski', tier: B, cost: 3, color: 0x76ff03, stats: { speed: 7, pop: 8, flex: 7 }, style: 'Park' },
+  { id: '1000skis-rival', brand: '1000 SKIS', name: 'Rival', category: 'board', equipType: 'ski', tier: B, cost: 3, color: 0xd32f2f, stats: { speed: 7, pop: 8, flex: 7 }, style: 'Park' },
   { id: 'faction-prodigy', brand: 'FACTION', name: 'Prodigy', category: 'board', equipType: 'ski', tier: B, cost: 3, color: 0xff5722, stats: { speed: 6, pop: 9, flex: 8 }, style: 'Freestyle' },
   { id: 'atomic-bent', brand: 'ATOMIC', name: 'Bent 100', category: 'board', equipType: 'ski', tier: B, cost: 3, color: 0x1e88e5, stats: { speed: 8, pop: 7, flex: 6 }, style: 'All-Mountain' },
   { id: 'faction-dancer', brand: 'FACTION', name: 'Dancer', category: 'board', equipType: 'ski', tier: B, cost: 3, color: 0xe91e63, stats: { speed: 7, pop: 7, flex: 9 }, style: 'Playful' },
   { id: 'atomic-maverick', brand: 'ATOMIC', name: 'Maverick', category: 'board', equipType: 'ski', tier: B, cost: 3, color: 0xb71c1c, stats: { speed: 9, pop: 6, flex: 5 }, style: 'Freeride' },
-  { id: '1000skis-icon', brand: '1000 SKIS', name: 'Icon', category: 'board', equipType: 'ski', tier: B, cost: 3, color: 0x212121, stats: { speed: 8, pop: 8, flex: 6 }, style: 'Aggressive' },
+  { id: '1000skis-icon', brand: '1000 SKIS', name: 'Icon', category: 'board', equipType: 'ski', tier: B, cost: 3, color: 0xb71c1c, stats: { speed: 8, pop: 8, flex: 6 }, style: 'Aggressive' },
 ];
 
 // Build lookup map

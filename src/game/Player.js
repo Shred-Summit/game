@@ -118,8 +118,8 @@ export class Player {
     this.riderGroup.rotation.y = this.STANCE_YAW;
 
     // Hips
-    const hips = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.18, 0.22), pantsMat);
-    hips.position.set(0, 0.55, 0); this.riderGroup.add(hips);
+    this.hipsMesh = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.18, 0.22), pantsMat);
+    this.hipsMesh.position.set(0, 0.55, 0); this.riderGroup.add(this.hipsMesh);
 
     // Torso
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.25), jacketMat);
@@ -221,17 +221,17 @@ export class Player {
     this.hipL.position.set(isSki ? -0.12 : -0.1, 0.48, isSki ? 0 : 0.08);
     this.riderGroup.add(this.hipL);
 
-    const thighL = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.16, 3, 6), pantsMat);
-    thighL.position.set(0, -0.1, 0); thighL.castShadow = true;
-    this.hipL.add(thighL);
+    this.thighL = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.16, 3, 6), pantsMat);
+    this.thighL.position.set(0, -0.1, 0); this.thighL.castShadow = true;
+    this.hipL.add(this.thighL);
 
     this.kneeL = new THREE.Group();
     this.kneeL.position.set(0, -0.22, 0);
     this.hipL.add(this.kneeL);
 
-    const calfL = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.16, 3, 6), pantsMat);
-    calfL.position.set(0, -0.1, 0); calfL.castShadow = true;
-    this.kneeL.add(calfL);
+    this.calfL = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.16, 3, 6), pantsMat);
+    this.calfL.position.set(0, -0.1, 0); this.calfL.castShadow = true;
+    this.kneeL.add(this.calfL);
 
     const bootL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.18), this.bootMat);
     bootL.position.set(0, -0.22, 0.03);
@@ -242,17 +242,17 @@ export class Player {
     this.hipR.position.set(isSki ? 0.12 : 0.1, 0.48, isSki ? 0 : -0.08);
     this.riderGroup.add(this.hipR);
 
-    const thighR = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.16, 3, 6), pantsMat);
-    thighR.position.set(0, -0.1, 0); thighR.castShadow = true;
-    this.hipR.add(thighR);
+    this.thighR = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.16, 3, 6), pantsMat);
+    this.thighR.position.set(0, -0.1, 0); this.thighR.castShadow = true;
+    this.hipR.add(this.thighR);
 
     this.kneeR = new THREE.Group();
     this.kneeR.position.set(0, -0.22, 0);
     this.hipR.add(this.kneeR);
 
-    const calfR = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.16, 3, 6), pantsMat);
-    calfR.position.set(0, -0.1, 0); calfR.castShadow = true;
-    this.kneeR.add(calfR);
+    this.calfR = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.16, 3, 6), pantsMat);
+    this.calfR.position.set(0, -0.1, 0); this.calfR.castShadow = true;
+    this.kneeR.add(this.calfR);
 
     const bootR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.18), this.bootMat);
     bootR.position.set(0, -0.22, 0.03);
@@ -1100,23 +1100,23 @@ export class Player {
     // Player has passed the lip — launch!
     if (t >= 0.95) {
       const rawSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
-      // Cap effective launch speed so kickers don't send you to orbit
-      const speed = Math.min(rawSpeed, 25);
+      // Cap effective launch speed — allow fast approach to matter
+      const speed = Math.min(rawSpeed, 32);
 
       // Launch angle based on jump size (bigger = steeper lip)
       const lipAngle = ramp.lipAngle || 0.55;
 
       // Redirect velocity through the lip angle
-      const launchSpeed = speed * 0.85;
+      const launchSpeed = speed * 0.92;
       this.velocity.y = Math.sin(lipAngle) * launchSpeed;
       const horizFactor = Math.cos(lipAngle);
       // Preserve horizontal speed but reduce it
-      const hScale = horizFactor * Math.min(1, 25 / Math.max(rawSpeed, 1));
+      const hScale = horizFactor * Math.min(1, 32 / Math.max(rawSpeed, 1));
       this.velocity.x *= hScale;
       this.velocity.z *= hScale;
 
-      // Small pop bonus
-      this.velocity.y += Math.min(speed * 0.04, 2);
+      // Pop bonus from speed
+      this.velocity.y += Math.min(speed * 0.05, 3);
 
       // Apply ollie pop boost if player pressed space on the kicker
       if (this.kickerPopBoost > 0) {
@@ -1343,6 +1343,17 @@ export class Player {
       case 'board': this.boardMat.color.copy(color); break;
       case 'helmet': this.helmetMat.color.copy(color); break;
     }
+  }
+
+  setBaggyPants(isBaggy) {
+    // Baggy pants: scale thighs, calves, and hips wider for a loose fit
+    const s = isBaggy ? 2.2 : 1.0;  // 4x volume ≈ 2.2x on XZ (width/depth)
+    for (const mesh of [this.thighL, this.thighR, this.calfL, this.calfR]) {
+      mesh.scale.set(s, 1, s);
+    }
+    // Slightly widen hips (keep subtle so no big rectangle)
+    const hipS = isBaggy ? 1.15 : 1.0;
+    this.hipsMesh.scale.set(hipS, 1, hipS);
   }
 
   applyBoardStats(speed, pop, flex) {
