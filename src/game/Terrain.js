@@ -248,6 +248,17 @@ export class Terrain {
     }
 
     // --- Phase 2: Flat park rails with entry lips ---
+    // Helper: check if a position overlaps any exclusion zone (jumps + landings)
+    const isInExclusionZone = (ox, oz, halfLen = 0) => {
+      for (const zone of this.exclusionZones) {
+        if (oz + halfLen >= zone.zStart && oz - halfLen <= zone.zEnd &&
+            Math.abs(ox - zone.x) < zone.halfWidth) {
+          return true;
+        }
+      }
+      return false;
+    };
+
     const railCount = 3 + Math.floor(Math.random() * 3); // 3-5 rails
     for (let i = 0; i < railCount; i++) {
       const x = zoneLevel === 2
@@ -266,6 +277,10 @@ export class Terrain {
         railHeight = 1.2;
         lipHeight = 0.8; // smaller lips for 270s
       }
+
+      // Skip if rail overlaps a jump or landing zone
+      const featureGlobalZCheck = zOffset + z;
+      if (isInExclusionZone(x, featureGlobalZCheck, railLength / 2)) continue;
 
       const feature = this.createParkRail(railLength, railHeight, 0);
       const width = 4.0;
@@ -301,14 +316,6 @@ export class Terrain {
     }
 
     // --- Phase 3: Trees and rocks (placed AFTER features to avoid exclusion zones) ---
-    const isInExclusionZone = (ox, oz) => {
-      for (const zone of this.exclusionZones) {
-        if (oz >= zone.zStart && oz <= zone.zEnd && Math.abs(ox - zone.x) < zone.halfWidth) {
-          return true;
-        }
-      }
-      return false;
-    };
 
     const treeCount = 25 + Math.floor(Math.random() * 15);
     for (let i = 0; i < treeCount; i++) {
