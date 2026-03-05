@@ -47,7 +47,7 @@ export class Game {
       this.mobileLookDir = new THREE.Vector3(0, -6, -8); // fixed angle relative to camera
       this.baseFOV = 45;
     } else {
-      this.cameraOffset = new THREE.Vector3(0, 6, 10);
+      this.cameraOffset = new THREE.Vector3(0, 4, 6);
       this.cameraLookAhead = new THREE.Vector3(0, -2, -20);
       this.baseFOV = 60;
     }
@@ -68,6 +68,11 @@ export class Game {
     this.deathTimer = 0;
     this.deathDelay = 1.0;
     this.crashPhraseSet = false;
+
+    // Ski patrol chasers
+    this.skiPatrol = [];
+    this.skiPatrolActive = false;
+    this.initSkiPatrol();
 
     // UI elements
     this.ui = {
@@ -652,6 +657,7 @@ export class Game {
   openLobby() {
     this.state = 'lobby';
     if (this.touchControls) this.touchControls.hide();
+    this.hideSkiPatrol();
     this.ui.deathScreen.classList.remove('active');
     this.ui.finishScreen.classList.remove('active');
     this.ui.newRecordLabel.classList.remove('show');
@@ -692,6 +698,157 @@ export class Game {
     // Trail 2 (ski right trail only)
     this.trail2 = this._createTrailMesh(MAX_TRAIL, material);
     this.trail2.mesh.visible = false;
+  }
+
+  initSkiPatrol() {
+    const redJacket = new THREE.MeshStandardMaterial({ color: 0xcc0000, roughness: 0.8 });
+    const blackPants = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xf5c6a0 });
+    const whiteCross = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+
+    for (let i = 0; i < 2; i++) {
+      const group = new THREE.Group();
+
+      // Legs
+      const legL = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.4, 4, 6), blackPants);
+      legL.position.set(-0.1, 0.28, 0); legL.castShadow = true; group.add(legL);
+      const legR = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.4, 4, 6), blackPants);
+      legR.position.set(0.1, 0.28, 0); legR.castShadow = true; group.add(legR);
+
+      // Torso
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.25), redJacket);
+      torso.position.set(0, 0.75, 0); torso.castShadow = true; group.add(torso);
+
+      // White cross on jacket
+      const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.06, 0.01), whiteCross);
+      crossH.position.set(0, 0.78, 0.13); group.add(crossH);
+      const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.2, 0.01), whiteCross);
+      crossV.position.set(0, 0.78, 0.13); group.add(crossV);
+
+      // Arms
+      const armL = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.35, 4, 6), redJacket);
+      armL.position.set(-0.27, 0.72, 0); armL.castShadow = true; group.add(armL);
+      const armR = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.35, 4, 6), redJacket);
+      armR.position.set(0.27, 0.72, 0); armR.castShadow = true; group.add(armR);
+
+      // Head
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), skinMat);
+      head.position.set(0, 1.12, 0); head.castShadow = true; group.add(head);
+
+      // Red helmet
+      const helmet = new THREE.Mesh(
+        new THREE.SphereGeometry(0.17, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.55),
+        redJacket);
+      helmet.position.set(0, 1.16, 0); group.add(helmet);
+
+      group.visible = false;
+      this.scene.add(group);
+      this.skiPatrol.push({
+        group,
+        legL, legR, armL, armR,
+        time: 0,
+        targetPos: new THREE.Vector3(),
+        arrived: false,
+        side: i === 0 ? -1 : 1,
+      });
+    }
+  }
+
+  spawnSkiPatrol(crashPos) {
+    this.skiPatrolActive = true;
+    for (const sp of this.skiPatrol) {
+      sp.time = 0;
+      sp.arrived = false;
+      const startX = crashPos.x + sp.side * 8;
+      const startZ = crashPos.z + 6;
+      const startY = this.terrain.getHeightAt(startX, startZ);
+      sp.group.position.set(startX, startY, startZ);
+      sp.targetPos.set(crashPos.x + sp.side * 1.5, crashPos.y, crashPos.z);
+      sp.group.visible = true;
+      sp.group.rotation.y = sp.side > 0 ? -Math.PI / 2 : Math.PI / 2;
+    }
+  }
+
+  updateSkiPatrol(dt) {
+    if (!this.skiPatrolActive) return;
+    for (const sp of this.skiPatrol) {
+      sp.time += dt;
+
+      if (!sp.arrived) {
+        // Run toward crash site
+        const dx = sp.targetPos.x - sp.group.position.x;
+        const dz = sp.targetPos.z - sp.group.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist > 0.3) {
+          const speed = 10.0;
+          sp.group.position.x += (dx / dist) * speed * dt;
+          sp.group.position.z += (dz / dist) * speed * dt;
+          const groundY = this.terrain.getHeightAt(sp.group.position.x, sp.group.position.z);
+          sp.group.position.y = groundY;
+          sp.group.rotation.y = Math.atan2(dx, dz);
+          const runCycle = sp.time * 12;
+          sp.legL.rotation.x = Math.sin(runCycle) * 0.6;
+          sp.legR.rotation.x = Math.sin(runCycle + Math.PI) * 0.6;
+          sp.armL.rotation.x = Math.sin(runCycle + Math.PI) * 0.5;
+          sp.armR.rotation.x = Math.sin(runCycle) * 0.5;
+        } else {
+          sp.arrived = true;
+          sp.time = 0;
+          sp.group.rotation.y = Math.PI; // face camera (uphill)
+        }
+      } else {
+        // Wii Sports bowling celebration
+        const groundY = this.terrain.getHeightAt(sp.group.position.x, sp.group.position.z);
+        const baseYaw = Math.PI; // face camera
+        const cycleDur = 1.8;
+        const t = sp.time % cycleDur;
+        let jumpH = 0, spinAngle = 0, legTuck = 0, armRaise = 0;
+
+        if (t < 0.35) {
+          const p = t / 0.35;
+          jumpH = Math.sin(p * Math.PI) * 0.5;
+          legTuck = Math.sin(p * Math.PI) * 0.3;
+          armRaise = Math.sin(p * Math.PI) * 0.4;
+        } else if (t < 0.5) {
+          // pause
+        } else if (t < 1.1) {
+          const p = (t - 0.5) / 0.6;
+          jumpH = Math.sin(p * Math.PI) * 0.7;
+          spinAngle = p * Math.PI * 2;
+          legTuck = Math.sin(p * Math.PI) * 0.4;
+          armRaise = 0.8 + Math.sin(p * Math.PI) * 0.3;
+        } else if (t < 1.25) {
+          armRaise = 0.3;
+        } else if (t < 1.55) {
+          const p = (t - 1.25) / 0.3;
+          jumpH = Math.sin(p * Math.PI) * 0.2;
+          legTuck = Math.sin(p * Math.PI) * 0.15;
+          armRaise = 0.3 + Math.sin(p * Math.PI) * 0.2;
+        } else {
+          armRaise = 0.1;
+        }
+
+        sp.group.position.y = groundY + jumpH;
+        sp.group.rotation.y = baseYaw + spinAngle;
+        sp.legL.rotation.x = -legTuck;
+        sp.legR.rotation.x = -legTuck;
+        sp.armL.rotation.x = -armRaise;
+        sp.armR.rotation.x = -armRaise;
+        sp.armL.rotation.z = armRaise > 0.3 ? 0.4 : 0;
+        sp.armR.rotation.z = armRaise > 0.3 ? -0.4 : 0;
+      }
+    }
+  }
+
+  hideSkiPatrol() {
+    this.skiPatrolActive = false;
+    for (const sp of this.skiPatrol) {
+      sp.group.visible = false;
+      sp.legL.rotation.set(0, 0, 0);
+      sp.legR.rotation.set(0, 0, 0);
+      sp.armL.rotation.set(0, 0, 0);
+      sp.armR.rotation.set(0, 0, 0);
+    }
   }
 
   _createTrailMesh(maxSegs, material) {
@@ -840,7 +997,10 @@ export class Game {
           this.crashPhraseSet = true;
           // Snow burst at crash point
           this.particles.emit(this.player.position, { x: 0, y: 5, z: 0 }, 80);
+          // Ski patrol rushes in
+          this.spawnSkiPatrol(this.player.position);
         }
+        this.updateSkiPatrol(dt);
 
         if (this.deathTimer >= this.deathDelay) {
           this.showDeathScreen();
@@ -866,6 +1026,7 @@ export class Game {
       this.updateUI(trickState, playerState);
     } else if (this.state === 'dead' || this.state === 'finished') {
       this.particles.update(dt);
+      this.updateSkiPatrol(dt);
     } else if (this.state === 'lobby') {
       this.updateLobby(dt);
     }
@@ -961,6 +1122,7 @@ export class Game {
     this.currentCameraPos.copy(
       this.lastCheckpointPos.clone().add(this.cameraOffset)
     );
+    this.hideSkiPatrol();
   }
 
   showFinishScreen() {
@@ -1149,6 +1311,8 @@ export class Game {
     this.lastCheckpointPos.copy(startPos);
     this.player.respawn(startPos);
     this.currentCameraPos.copy(startPos.clone().add(this.cameraOffset));
+
+    this.hideSkiPatrol();
 
     // Reset trail
     this._resetTrail(this.trail1);

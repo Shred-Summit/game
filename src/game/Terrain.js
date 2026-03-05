@@ -123,6 +123,8 @@ export class Terrain {
 
     for (const slotZ of jumpSlots) {
       const featureGlobalZ = zOffset + slotZ;
+      // Stop regular jumps before the massive booter zone
+      if (featureGlobalZ <= -3900) continue;
       // Past checkpoint 4 (~z <= -2100) → right jump is big, otherwise small
       const pastCP4 = featureGlobalZ <= -2100;
       const pair = [
@@ -165,11 +167,11 @@ export class Terrain {
           // Landing starts after the air gap (space between lip and landing surface)
           rampData.landingZoneStartZ = lipZ - (ld.airGap || 0);
           rampData.landingZoneEndZ = lipZ - (ld.airGap || 0) - ld.gap - ld.length;
-          // Use actual terrain heights to ensure landing zone stays above ground
+          // Landing hitbox heights based on terrain at the landing position (not ramp base)
           const terrainAtStart = this.computeHeight(x, rampData.landingZoneStartZ);
           const terrainAtEnd = this.computeHeight(x, rampData.landingZoneEndZ);
-          rampData.landingTopHeight = Math.max(minY + ld.topLocalY, terrainAtStart + 2.0);
-          rampData.landingBottomHeight = Math.max(minY + ld.endLocalY, terrainAtEnd + 1.0);
+          rampData.landingTopHeight = terrainAtStart + 2.0;
+          rampData.landingBottomHeight = terrainAtEnd + 1.0;
           rampData.landingWidth = ld.width;
           rampData.landingGap = ld.gap;
           rampData.landingLength = ld.length;
@@ -188,9 +190,11 @@ export class Terrain {
       }
     }
 
-    // --- FINAL BOOTER: massive 200ft jump before finish line ---
-    const booterGlobalZ = -4100;
-    if (booterGlobalZ >= zOffset - this.chunkLength && booterGlobalZ < zOffset) {
+    // --- FINAL BOOTERS: two massive 200ft jumps back to back before finish line ---
+    const booterPositions = [-3950, -4200];
+    for (const booterGlobalZ of booterPositions) {
+      if (booterGlobalZ < zOffset - this.chunkLength || booterGlobalZ >= zOffset) continue;
+
       const booterFeet = 200;
       const feature = this.createJump(booterFeet);
       const bScale = booterFeet / 30;
@@ -228,8 +232,8 @@ export class Terrain {
         booterData.landingZoneEndZ = lipZ - (ld.airGap || 0) - ld.gap - ld.length;
         const terrainAtStart = this.computeHeight(bx, booterData.landingZoneStartZ);
         const terrainAtEnd = this.computeHeight(bx, booterData.landingZoneEndZ);
-        booterData.landingTopHeight = Math.max(bMinY + ld.topLocalY, terrainAtStart + 2.0);
-        booterData.landingBottomHeight = Math.max(bMinY + ld.endLocalY, terrainAtEnd + 1.0);
+        booterData.landingTopHeight = terrainAtStart + 2.0;
+        booterData.landingBottomHeight = terrainAtEnd + 1.0;
         booterData.landingWidth = ld.width;
         booterData.landingGap = ld.gap;
         booterData.landingLength = ld.length;

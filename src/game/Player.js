@@ -13,8 +13,8 @@ export class Player {
 
     this.grounded = false;
     this.airTime = 0;
-    this.baseMaxSpeed = 35;
-    this.maxSpeed = 35;  // ~126 km/h — fast but not absurd
+    this.baseMaxSpeed = 36.11;
+    this.maxSpeed = 36.11;  // 130 km/h
     this.gravity = -25;
     this.baseJumpForce = 8;
     this.jumpForce = 8;
@@ -51,6 +51,7 @@ export class Player {
     this.wasGrinding = false;
     this.landedOnRail = false;     // one-shot flag: air → rail transition
     this.frontswapCount = 0;       // number of frontside↔backside swaps during grind
+    this.grindExitTimer = 0;       // cooldown after jumping off rail
 
     // Cork tracking
     this.isCorkingThisJump = false;
@@ -383,6 +384,7 @@ export class Player {
     this.wasGrounded = this.grounded;
     this.wasGrinding = this.grinding;
     this.landedOnRail = false; // one-shot: cleared each frame, set by _initGrindFromAir
+    if (this.grindExitTimer > 0) this.grindExitTimer -= dt;
     this.isTucking = input.tuck;
 
     const groundOffset = 0.08; // board rests on snow
@@ -819,6 +821,7 @@ export class Player {
           this.grindRail = null;
           this.grounded = false;
           this.peakHeight = 0;
+          this.grindExitTimer = 0.3; // prevent re-snap to same rail
         }
       }
 
@@ -1141,7 +1144,7 @@ export class Player {
 
   // ===== RAIL GRIND =====
   updateRailGrind(terrain, dt) {
-    if (this.grinding) return;
+    if (this.grinding || this.grindExitTimer > 0) return;
 
     for (const ramp of terrain.ramps) {
       if (ramp.type !== 'rail') continue;

@@ -425,13 +425,14 @@ export class TrickSystem {
         trickScore += 100 + Math.floor(this.grindAccumulatedTime * 75);
       }
 
-      // Frontswap bonus — switching between frontside and backside mid-grind
+      // Frontswap bonus — switching between frontside and backside mid-grind (max 5 scored)
       if (this.grindFrontswaps > 0) {
+        const scoredSwaps = Math.min(this.grindFrontswaps, 5);
         const swapLabel = this.grindFrontswaps > 1
           ? `${this.grindFrontswaps}x FRONTSWAP`
           : 'FRONTSWAP';
         tricks.push(swapLabel);
-        trickScore += this.grindFrontswaps * 150;
+        trickScore += scoredSwaps * 150;
       }
 
       // Long grind bonus
