@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, query, where, orderBy, limit, getDocs, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, query, where, orderBy, limit, getDocs, serverTimestamp, doc, setDoc, getDoc } from 'firebase/firestore';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 
 // ==========================================
 // FIREBASE SETUP — Replace this config with
@@ -16,52 +17,120 @@ const firebaseConfig = {
 };
 
 let db = null;
+let auth = null;
+
+export function isFirebaseConfigured() {
+  return !!(firebaseConfig.apiKey && firebaseConfig.projectId);
+}
 
 export function initFirebase() {
-  // Don't init if config is empty (placeholder)
-  if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-    console.warn('Firebase config not set — worldwide leaderboard disabled. See src/game/firebase.js');
+  if (!isFirebaseConfigured()) {
+    console.warn('Firebase config not set — auth & cloud save disabled. See src/game/firebase.js');
     return null;
   }
   try {
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
+    auth = getAuth(app);
     return db;
   } catch (e) {
-    console.warn('Firebase init failed, worldwide leaderboard disabled:', e);
+    console.warn('Firebase init failed:', e);
     return null;
   }
 }
 
+export function getFirebaseAuth() {
+  return auth;
+}
+
+export function getDb() {
+  return db;
+}
+
+// ---- AUTH ----
+
+export async function createAccount(email, password) {
+  if (!auth) throw new Error('Firebase not initialized');
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  return cred.user;
+}
+
+export async function loginAccount(email, password) {
+  if (!auth) throw new Error('Firebase not initialized');
+  const cred = await signInWithEmailAndPassword(auth, email, password);
+  return cred.user;
+}
+
+export async function logoutAccount() {
+  if (!auth) return;
+  await signOut(auth);
+}
+
+export function onAuthChange(callback) {
+  if (!auth) return () => {};
+  return onAuthStateChanged(auth, callback);
+}
+
+// ---- CLOUD SAVE ----
+
+let _saveTimer = null;
+let _pendingSave = null;
+
+export async function cloudSaveProgress(uid, data) {
+  if (!db || !uid) return;
+  // Debounce: buffer writes
+  _pendingSave = { uid, data };
+  if (_saveTimer) return;
+  _saveTimer = setTimeout(async () => {
+    _saveTimer = null;
+    if (!_pendingSave) return;
+    const { uid: u, data: d } = _pendingSave;
+    _pendingSave = null;
+    try {
+      await setDoc(doc(db, 'users', u), d, { merge: true });
+    } catch (e) {
+      console.warn('Cloud save failed:', e);
+    }
+  }, 500);
+}
+
+export async function cloudLoadProgress(uid) {
+  if (!db || !uid) return null;
+  try {
+    const snap = await getDoc(doc(db, 'users', uid));
+    if (snap.exists()) return snap.data();
+  } catch (e) {
+    console.warn('Cloud load failed:', e);
+  }
+  return null;
+}
+
+// ---- LEADERBOARD (existing) ----
+
 /**
  * Get ISO 8601 week ID string like "2026-W10".
- * Weeks start on Monday. Week 1 contains January 4th.
  */
 export function getWeekId(date = new Date()) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7; // Sunday = 7
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum); // Thursday of this week
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
 
-/**
- * Submit a score to the worldwide leaderboard.
- * Returns the document ID on success, null on failure.
- */
-export async function submitScore(db, nickname, score, title = null) {
-  if (!db) return null;
+export async function submitScore(dbRef, nickname, score, title = null) {
+  if (!dbRef) return null;
   try {
     const weekId = getWeekId();
-    const doc = {
+    const d = {
       nickname: nickname,
       score: score,
       weekId: weekId,
       createdAt: serverTimestamp(),
     };
-    if (title) doc.title = title;
-    const docRef = await addDoc(collection(db, 'scores'), doc);
+    if (title) d.title = title;
+    const docRef = await addDoc(collection(dbRef, 'scores'), d);
     return docRef.id;
   } catch (e) {
     console.warn('Failed to submit score to Firebase:', e);
@@ -69,31 +138,23 @@ export async function submitScore(db, nickname, score, title = null) {
   }
 }
 
-/**
- * Fetch the top worldwide scores for the current week.
- * Returns an array of { nickname, score, weekId, createdAt } objects.
- */
-export async function fetchWorldwideScores(db, maxResults = 20) {
-  if (!db) return [];
+export async function fetchWorldwideScores(dbRef, maxResults = 20) {
+  if (!dbRef) return [];
   try {
     const weekId = getWeekId();
     const q = query(
-      collection(db, 'scores'),
+      collection(dbRef, 'scores'),
       where('weekId', '==', weekId),
       orderBy('score', 'desc'),
       limit(maxResults),
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
+    return snapshot.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
     }));
   } catch (e) {
     console.warn('Failed to fetch worldwide scores:', e);
     return [];
   }
-}
-
-export function getDb() {
-  return db;
 }

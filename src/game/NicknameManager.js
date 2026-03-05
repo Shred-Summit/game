@@ -5,6 +5,7 @@ const VALID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export class NicknameManager {
   constructor() {
+    this.onSave = null; // cloud save callback
     this.nickname = this.load();
   }
 
@@ -23,7 +24,15 @@ export class NicknameManager {
     try {
       localStorage.setItem(STORAGE_KEY, cleaned);
     } catch (e) { /* ignore */ }
+    if (this.onSave) this.onSave();
     return true;
+  }
+
+  setData(nickname) {
+    if (nickname && this.validate(nickname)) {
+      this.nickname = nickname;
+      try { localStorage.setItem(STORAGE_KEY, nickname); } catch (e) { /* ignore */ }
+    }
   }
 
   validate(name) {

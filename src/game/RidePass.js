@@ -74,6 +74,7 @@ const REWARDS = [
 
 export class RidePass {
   constructor() {
+    this.onSave = null; // cloud save callback
     this.data = this.load();
   }
 
@@ -89,6 +90,19 @@ export class RidePass {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
     } catch (e) { /* ignore */ }
+    if (this.onSave) this.onSave();
+  }
+
+  setData(data) {
+    if (data && typeof data === 'object') {
+      this.data = {
+        claimedLevels: data.claimedLevels || [],
+        tokens: data.tokens || { steezeL1: 0, steezeL2: 0, steezeL3: 0, board: 0 },
+        unlockedTitles: data.unlockedTitles || [],
+        selectedTitle: data.selectedTitle || null,
+      };
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data)); } catch (e) { /* ignore */ }
+    }
   }
 
   createFreshData() {

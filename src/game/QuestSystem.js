@@ -86,6 +86,7 @@ function getTodayString() {
 
 export class QuestSystem {
   constructor() {
+    this.onSave = null; // cloud save callback
     this.data = this.load();
     this.checkDailyReset();
 
@@ -106,6 +107,20 @@ export class QuestSystem {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
     } catch (e) { /* ignore */ }
+    if (this.onSave) this.onSave();
+  }
+
+  setData(data) {
+    if (data && typeof data === 'object') {
+      this.data = {
+        dailyDate: data.dailyDate || '',
+        dailyProgress: data.dailyProgress || [],
+        seasonProgress: data.seasonProgress || [],
+        totalXP: data.totalXP || 0,
+      };
+      this.checkDailyReset();
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data)); } catch (e) { /* ignore */ }
+    }
   }
 
   createFreshData() {
