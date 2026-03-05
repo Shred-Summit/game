@@ -110,7 +110,9 @@ export class Terrain {
     const zoneLevel = this.getZoneLevel(chunkMidZ);
 
     // --- Phase 1: Jump pairs (left = medium, right = small/big) ---
-    const jumpSlots = [-75, -225]; // evenly spaced z positions within chunk
+    // Zone 2 jumps are much bigger (~167 unit footprint for 150ft) —
+    // use a single slot per chunk so they don't overlap with landings
+    const jumpSlots = zoneLevel === 2 ? [-150] : [-75, -225];
     const jumpDefs = zoneLevel === 2
       ? { medium: { feet: 100, width: 12.5, length: 17.5, size: 'medium', lipHeight: 6.75, lipAngle: 0.55 },
           small:  { feet: 75,  width: 10,   length: 12.5, size: 'small',  lipHeight: 5.0,  lipAngle: 0.45 },
@@ -393,9 +395,11 @@ export class Terrain {
     const landingWidth = rampWidth * 1.4;  // wider than ramp
     const landingHalfW = landingWidth / 2;
     const totalLandingDist = landingGap + landingLen;
-    // Landing starts below lip — drops across the air gap following terrain slope
+    // Landing top starts near lip height, adjusted for air gap terrain drop
     const landingTopY = rampHeight * 0.92 - (airGap * this.slopeAngle);
-    const landingEndY = landingTopY - (totalLandingDist * this.slopeAngle);
+    // Landing end must reach actual terrain level at that Z distance from group center
+    const distToLandingEnd = rampLength / 2 + airGap + totalLandingDist;
+    const landingEndY = -(distToLandingEnd * this.slopeAngle);
 
     // Landing profile: flat table then straight slope (like real park jumps)
     const landingSegs = 20;
@@ -416,11 +420,15 @@ export class Terrain {
       }
       landingShape.lineTo(x, y);
     }
-    // Flat runout past slope bottom + fill underneath
-    landingShape.lineTo(totalLandingDist + 1.5 * scale, landingEndY);
-    const fillBottom = landingEndY - 5 * scale;
-    landingShape.lineTo(totalLandingDist + 1.5 * scale, fillBottom);
-    landingShape.lineTo(0, fillBottom);
+    // Smooth runout that blends into terrain at the correct height
+    const runoutLen = 4.0 * scale;
+    const distToRunoutEnd = rampLength / 2 + airGap + totalLandingDist + runoutLen;
+    const runoutEndY = -(distToRunoutEnd * this.slopeAngle);
+    landingShape.lineTo(totalLandingDist + runoutLen, runoutEndY);
+    // Fill deep underneath so landing always sinks into terrain
+    const fillDepth = runoutEndY - rampHeight - 5 * scale;
+    landingShape.lineTo(totalLandingDist + runoutLen, fillDepth);
+    landingShape.lineTo(0, fillDepth);
     landingShape.lineTo(0, landingTopY);
 
     const landingGeo = new THREE.ExtrudeGeometry(landingShape, {
@@ -451,8 +459,9 @@ export class Terrain {
         }
         lWallShape.lineTo(x, y);
       }
-      lWallShape.lineTo(totalLandingDist, landingEndY);
-      lWallShape.lineTo(0, landingEndY);
+      lWallShape.lineTo(totalLandingDist + runoutLen, runoutEndY + 0.15 * scale);
+      lWallShape.lineTo(totalLandingDist + runoutLen, fillDepth);
+      lWallShape.lineTo(0, fillDepth);
       lWallShape.lineTo(0, landingTopY + 0.15 * scale);
 
       const lWallGeo = new THREE.ExtrudeGeometry(lWallShape, {

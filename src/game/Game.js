@@ -103,6 +103,19 @@ export class Game {
       shopPanel: document.getElementById('shop-panel'),
       shopBack: document.getElementById('shop-back'),
       lobbyShop: document.getElementById('lobby-shop'),
+      lobbyAccount: document.getElementById('lobby-account'),
+      accountPanel: document.getElementById('account-panel'),
+      accountBack: document.getElementById('account-back'),
+      accountEmail: document.getElementById('account-email'),
+      accountNickname: document.getElementById('account-nickname'),
+      accountNicknameEdit: document.getElementById('account-nickname-edit'),
+      accountNicknameEditRow: document.getElementById('account-nickname-edit-row'),
+      accountNicknameInput: document.getElementById('account-nickname-input'),
+      accountNicknameSave: document.getElementById('account-nickname-save'),
+      accountNicknameCancel: document.getElementById('account-nickname-cancel'),
+      accountNicknameError: document.getElementById('account-nickname-error'),
+      accountTitleOptions: document.getElementById('account-title-options'),
+      accountLogoutBtn: document.getElementById('account-logout-btn'),
       shopItemList: document.getElementById('shop-item-list'),
       shopS1Count: document.getElementById('shop-s1-count'),
       shopS2Count: document.getElementById('shop-s2-count'),
@@ -575,6 +588,65 @@ export class Game {
         this.renderQuestList(this.activeQuestTab);
       });
     });
+
+    // Account button → open account panel
+    this.ui.lobbyAccount.addEventListener('click', () => {
+      this.renderAccountPanel();
+      this.ui.accountPanel.classList.add('active');
+    });
+
+    // Account panel — block clicks
+    this.ui.accountPanel.addEventListener('click', (e) => e.stopPropagation());
+
+    // Account back button
+    this.ui.accountBack.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.ui.accountPanel.classList.remove('active');
+    });
+
+    // Account — edit nickname
+    this.ui.accountNicknameEdit.addEventListener('click', () => {
+      const current = this.nicknameManager.getNickname() || '';
+      this.ui.accountNicknameInput.value = current;
+      this.ui.accountNicknameError.textContent = '';
+      this.ui.accountNickname.parentElement.style.display = 'none';
+      this.ui.accountNicknameEditRow.style.display = 'flex';
+      setTimeout(() => this.ui.accountNicknameInput.focus(), 50);
+    });
+
+    // Account — save nickname
+    this.ui.accountNicknameSave.addEventListener('click', () => {
+      const value = this.ui.accountNicknameInput.value.trim();
+      if (!this.nicknameManager.validate(value)) {
+        this.ui.accountNicknameError.textContent = '3-12 LETTERS, NUMBERS, _ OR -';
+        return;
+      }
+      this.nicknameManager.save(value);
+      this.ui.accountNickname.textContent = value;
+      this.ui.accountNicknameEditRow.style.display = 'none';
+      this.ui.accountNickname.parentElement.style.display = 'flex';
+      this.ui.accountNicknameError.textContent = '';
+    });
+
+    // Account — cancel nickname edit
+    this.ui.accountNicknameCancel.addEventListener('click', () => {
+      this.ui.accountNicknameEditRow.style.display = 'none';
+      this.ui.accountNickname.parentElement.style.display = 'flex';
+      this.ui.accountNicknameError.textContent = '';
+    });
+
+    // Account — prevent keyboard input from reaching game
+    this.ui.accountNicknameInput.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.code === 'Enter') this.ui.accountNicknameSave.click();
+    });
+    this.ui.accountNicknameInput.addEventListener('keyup', (e) => e.stopPropagation());
+
+    // Account — log out
+    this.ui.accountLogoutBtn.addEventListener('click', async () => {
+      this.ui.accountPanel.classList.remove('active');
+      await logoutAccount();
+    });
   }
 
   openLobby() {
@@ -588,6 +660,7 @@ export class Game {
     this.ui.questsPanel.classList.remove('active');
     this.ui.ridepassPanel.classList.remove('active');
     this.ui.shopPanel.classList.remove('active');
+    this.ui.accountPanel.classList.remove('active');
     this.ui.lobbyScreen.classList.add('active');
     this.player.cleanupDebris();
     this.player.boardGroup.visible = true;
@@ -1435,6 +1508,44 @@ export class Game {
         btn.classList.add('selected');
       });
     });
+  }
+
+  // ---- ACCOUNT ----
+
+  renderAccountPanel() {
+    // Email
+    this.ui.accountEmail.textContent = this.currentUser ? this.currentUser.email : '\u2014';
+
+    // Nickname
+    const nick = this.nicknameManager.getNickname();
+    this.ui.accountNickname.textContent = nick || '\u2014';
+    // Reset edit state
+    this.ui.accountNicknameEditRow.style.display = 'none';
+    this.ui.accountNickname.parentElement.style.display = 'flex';
+    this.ui.accountNicknameError.textContent = '';
+
+    // Titles
+    const titles = this.ridePass.getUnlockedTitles();
+    const selected = this.ridePass.getSelectedTitle();
+    if (titles.length === 0) {
+      this.ui.accountTitleOptions.innerHTML = '<span style="color:rgba(255,255,255,0.3); font-family:\'Bebas Neue\',sans-serif; letter-spacing:2px; font-size:14px;">NO TITLES UNLOCKED</span>';
+    } else {
+      const noneSelected = selected === null;
+      let html = `<button class="rp-title-btn${noneSelected ? ' selected' : ''}" data-title="">NONE</button>`;
+      html += titles.map(t =>
+        `<button class="rp-title-btn${t === selected ? ' selected' : ''}" data-title="${t}">${t}</button>`
+      ).join('');
+      this.ui.accountTitleOptions.innerHTML = html;
+
+      this.ui.accountTitleOptions.querySelectorAll('.rp-title-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const title = btn.dataset.title || null;
+          this.ridePass.selectTitle(title);
+          this.ui.accountTitleOptions.querySelectorAll('.rp-title-btn').forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+        });
+      });
+    }
   }
 
   // ---- SHOP ----

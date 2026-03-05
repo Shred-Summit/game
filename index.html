@@ -266,6 +266,7 @@
     #lobby-ridepass { top: 30px; right: 30px; }
     #lobby-quests { bottom: 80px; left: 30px; }
     #lobby-customize { bottom: 80px; right: 30px; }
+    #lobby-account { bottom: 30px; left: 50%; transform: translateX(-50%); font-size: 16px; padding: 8px 20px; }
 
     /* DROP IN stays centered */
     #lobby-drop-in {
@@ -930,6 +931,73 @@
       transition: all 0.15s;
     }
     #customize-back:hover { background: rgba(255,255,255,0.18); border-color: #fff; color: #fff; }
+
+    /* Account panel */
+    #account-panel {
+      display: none; flex-direction: column; align-items: center;
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(10,18,30,0.97); z-index: 3;
+      padding-top: 60px; overflow-y: auto;
+    }
+    #account-panel.active { display: flex; }
+    #account-panel h2 {
+      font-size: 48px; font-family: 'Bebas Neue', sans-serif;
+      color: #fff; letter-spacing: 6px; margin-bottom: 30px;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    }
+    .account-row {
+      display: flex; flex-direction: column; align-items: center;
+      margin-bottom: 28px; width: 320px;
+    }
+    .account-row label {
+      font-family: 'Bebas Neue', sans-serif; font-size: 14px;
+      letter-spacing: 3px; color: rgba(255,255,255,0.4); margin-bottom: 6px;
+    }
+    .account-value {
+      font-family: 'Bebas Neue', sans-serif; font-size: 24px;
+      letter-spacing: 2px; color: #fff;
+    }
+    .account-edit-row {
+      display: flex; align-items: center; gap: 10px;
+    }
+    #account-nickname-input {
+      font-family: 'Bebas Neue', sans-serif; font-size: 22px;
+      letter-spacing: 2px; color: #fff; background: rgba(255,255,255,0.1);
+      border: 2px solid rgba(255,255,255,0.3); border-radius: 6px;
+      padding: 6px 12px; width: 180px; outline: none; text-align: center;
+    }
+    #account-nickname-input:focus { border-color: #ffc107; }
+    .account-inline-btn {
+      font-family: 'Bebas Neue', sans-serif; font-size: 14px;
+      letter-spacing: 2px; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.2); border-radius: 4px;
+      padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+    }
+    .account-inline-btn:hover { color: #fff; border-color: #fff; background: rgba(255,255,255,0.15); }
+    #account-nickname-error {
+      font-family: 'Bebas Neue', sans-serif; font-size: 12px;
+      color: #ff5252; letter-spacing: 1px; margin-top: 4px; min-height: 16px;
+    }
+    .account-title-section { margin-top: 4px; }
+    .account-title-section .rp-title-btn {
+      margin: 3px; font-size: 14px; padding: 6px 14px;
+    }
+    #account-logout-btn {
+      margin-top: 30px; padding: 10px 36px;
+      font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 3px;
+      color: #ff5252; background: rgba(255,82,82,0.1);
+      border: 2px solid rgba(255,82,82,0.3); border-radius: 8px;
+      cursor: pointer; transition: all 0.15s;
+    }
+    #account-logout-btn:hover { background: rgba(255,82,82,0.25); border-color: #ff5252; color: #fff; }
+    #account-back {
+      margin-top: 16px; padding: 10px 36px;
+      font-size: 18px; font-family: 'Bebas Neue', sans-serif; letter-spacing: 3px;
+      color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08);
+      border: 2px solid rgba(255,255,255,0.25); border-radius: 8px;
+      cursor: pointer; transition: all 0.15s;
+    }
+    #account-back:hover { background: rgba(255,255,255,0.18); border-color: #fff; color: #fff; }
 
     /* Crash vignette */
     #crash-vignette {
@@ -1869,6 +1937,7 @@
     <div class="lobby-corner-btn" id="lobby-quests">QUESTS</div>
     <div class="lobby-corner-btn" id="lobby-customize">CUSTOMIZE</div>
     <button id="lobby-logout">LOG OUT</button>
+    <div class="lobby-corner-btn" id="lobby-account">ACCOUNT</div>
 
     <!-- Center: DROP IN -->
     <button id="lobby-drop-in">DROP IN</button>
@@ -1985,6 +2054,34 @@
         </div>
       </div>
       <button id="customize-back">BACK</button>
+    </div>
+
+    <!-- Account panel -->
+    <div id="account-panel">
+      <h2>ACCOUNT</h2>
+      <div class="account-row">
+        <label>EMAIL</label>
+        <span class="account-value" id="account-email">&mdash;</span>
+      </div>
+      <div class="account-row">
+        <label>USERNAME</label>
+        <div class="account-edit-row">
+          <span class="account-value" id="account-nickname">&mdash;</span>
+          <button class="account-inline-btn" id="account-nickname-edit">EDIT</button>
+        </div>
+        <div class="account-edit-row" id="account-nickname-edit-row" style="display:none">
+          <input id="account-nickname-input" maxlength="12" placeholder="username">
+          <button class="account-inline-btn" id="account-nickname-save">SAVE</button>
+          <button class="account-inline-btn" id="account-nickname-cancel">CANCEL</button>
+        </div>
+        <span id="account-nickname-error"></span>
+      </div>
+      <div class="account-row">
+        <label>TITLE</label>
+        <div class="account-title-section" id="account-title-options"></div>
+      </div>
+      <button id="account-logout-btn">LOG OUT</button>
+      <button id="account-back">BACK</button>
     </div>
   </div>
 
