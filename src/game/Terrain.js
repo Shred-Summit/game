@@ -148,122 +148,141 @@ export class Terrain {
     const chunkMidZ = zOffset - this.chunkLength / 2;
     const zoneLevel = this.getZoneLevel(chunkMidZ);
 
-    const featureCount = zoneLevel === 2
-      ? 6 + Math.floor(Math.random() * 4)   // 6-9 features for competition course
-      : 5 + Math.floor(Math.random() * 4);  // 5-8 features for freeride
+    // --- Phase 1: Jump pairs (left = medium, right = small/big) ---
+    const jumpSlots = [-75, -225]; // evenly spaced z positions within chunk
+    const jumpDefs = zoneLevel === 2
+      ? { medium: { feet: 100, width: 12.5, length: 17.5, size: 'medium', lipHeight: 6.75, lipAngle: 0.55 },
+          small:  { feet: 75,  width: 10,   length: 12.5, size: 'small',  lipHeight: 5.0,  lipAngle: 0.45 },
+          big:    { feet: 150, width: 17.5, length: 27.5, size: 'big',    lipHeight: 10.0, lipAngle: 0.65 } }
+      : { medium: { feet: 40, width: 5, length: 7,  size: 'medium', lipHeight: 2.7, lipAngle: 0.55 },
+          small:  { feet: 30, width: 4, length: 5,  size: 'small',  lipHeight: 2.0, lipAngle: 0.45 },
+          big:    { feet: 60, width: 7, length: 11, size: 'big',    lipHeight: 4.0, lipAngle: 0.65 } };
 
-    for (let i = 0; i < featureCount; i++) {
+    for (const slotZ of jumpSlots) {
+      const featureGlobalZ = zOffset + slotZ;
+      // Past checkpoint 4 (~z <= -2100) → right jump is big, otherwise small
+      const pastCP4 = featureGlobalZ <= -2100;
+      const pair = [
+        { def: jumpDefs.medium, x: -12 },  // left = always medium
+        { def: pastCP4 ? jumpDefs.big : jumpDefs.small, x: 12 }, // right = small or big
+      ];
+
+      for (const { def, x } of pair) {
+        const feature = this.createJump(def.feet);
+        const type = 'kicker';
+        const { width, length, size, lipHeight, lipAngle } = def;
+
+        // Embed in terrain
+        const halfW = width / 2;
+        const halfL = length / 2;
+        let minY = Infinity;
+        for (const sx of [-halfW, 0, halfW]) {
+          for (const sz of [-halfL, -halfL / 2, 0, halfL / 2, halfL]) {
+            const h = this.computeHeight(x + sx, featureGlobalZ + sz);
+            if (h < minY) minY = h;
+          }
+        }
+        minY -= 0.3;
+
+        feature.position.set(x, minY, featureGlobalZ);
+        this.scene.add(feature);
+        chunk.objects.push(feature);
+        const rampData = {
+          mesh: feature,
+          position: new THREE.Vector3(x, minY, featureGlobalZ),
+          type, width, length, size, lipHeight, lipAngle, surfaceHeight: 0,
+        };
+
+        if (feature.userData.landing) {
+          const ld = feature.userData.landing;
+          const lipZ = featureGlobalZ - length / 2;
+          rampData.landingZoneStartZ = lipZ;
+          rampData.landingZoneEndZ = lipZ - ld.gap - ld.length;
+          rampData.landingTopHeight = minY + ld.topLocalY;
+          rampData.landingBottomHeight = this.computeHeight(x, lipZ - ld.gap - ld.length) - 0.3;
+          rampData.landingWidth = ld.width;
+          rampData.landingGap = ld.gap;
+          rampData.landingLength = ld.length;
+        }
+
+        this.ramps.push(rampData);
+      }
+    }
+
+    // --- Phase 2: Rails (randomly placed between jump pairs) ---
+    const railCount = 3 + Math.floor(Math.random() * 3); // 3-5 rails
+    for (let i = 0; i < railCount; i++) {
       const x = zoneLevel === 2
-        ? (Math.random() - 0.5) * 45   // wider spread for bigger features
+        ? (Math.random() - 0.5) * 45
         : (Math.random() - 0.5) * 35;
       const z = -20 - Math.random() * (this.chunkLength - 40);
       const roll = Math.random();
 
-      let feature, type, width, length, size;
-
-      // Extra data for physics
-      let lipHeight = 0, lipAngle = 0, surfaceHeight = 0;
+      let feature, width, length, surfaceHeight;
 
       if (zoneLevel === 2) {
-        // ===== LEVEL 2: Competition slopestyle course =====
-        // Bigger jumps (2.5x), longer & wider rails, more complex rail types
-        const ws = 3; // rail width scale
-
-        if (roll < 0.10) {
-          feature = this.createJump(75);
-          type = 'kicker'; width = 10; length = 12.5; size = 'medium';
-          lipHeight = 5.0; lipAngle = 0.45;
-        } else if (roll < 0.20) {
-          feature = this.createJump(100);
-          type = 'kicker'; width = 12.5; length = 17.5; size = 'big';
-          lipHeight = 6.75; lipAngle = 0.55;
-        } else if (roll < 0.27) {
-          feature = this.createJump(125);
-          type = 'kicker'; width = 15; length = 22.5; size = 'big';
-          lipHeight = 8.25; lipAngle = 0.62;
-        } else if (roll < 0.32) {
-          feature = this.createJump(150);
-          type = 'kicker'; width = 17.5; length = 27.5; size = 'big';
-          lipHeight = 10.0; lipAngle = 0.65;
-        } else if (roll < 0.40) {
+        const ws = 3;
+        if (roll < 0.14) {
           const rs = 3 + Math.random() * 4;
           feature = this.createFlatRail(rs, ws);
-          type = 'rail'; width = 1.5 * ws; length = 8 * rs; surfaceHeight = 1.2;
-        } else if (roll < 0.47) {
+          width = 1.5 * ws; length = 8 * rs; surfaceHeight = 1.2;
+        } else if (roll < 0.28) {
           const rs = 3 + Math.random() * 4;
           feature = this.createDownRail(rs, ws);
-          type = 'rail'; width = 1.5 * ws; length = 10 * rs; surfaceHeight = 1.5;
-        } else if (roll < 0.55) {
+          width = 1.5 * ws; length = 10 * rs; surfaceHeight = 1.5;
+        } else if (roll < 0.42) {
           const rs = 3 + Math.random() * 4;
           feature = this.createRainbowRail(rs, ws);
-          type = 'rail'; width = 1.5 * ws; length = 10 * rs; surfaceHeight = 2.0;
-        } else if (roll < 0.65) {
+          width = 1.5 * ws; length = 10 * rs; surfaceHeight = 2.0;
+        } else if (roll < 0.56) {
           const rs = 3 + Math.random() * 4;
           feature = this.createFlatDownFlatRail(rs, ws);
-          type = 'rail'; width = 1.5 * ws; length = 12 * rs; surfaceHeight = 1.5;
-        } else if (roll < 0.73) {
+          width = 1.5 * ws; length = 12 * rs; surfaceHeight = 1.5;
+        } else if (roll < 0.70) {
           const rs = 3 + Math.random() * 4;
           feature = this.createBox(rs, ws);
-          type = 'rail'; width = 2 * ws; length = 8 * rs; surfaceHeight = 1.0;
+          width = 2 * ws; length = 8 * rs; surfaceHeight = 1.0;
         } else if (roll < 0.85) {
           const rs = 3 + Math.random() * 4;
           feature = this.createCRail(rs, ws);
-          type = 'rail'; width = 2 * ws; length = 10 * rs; surfaceHeight = 1.3;
+          width = 2 * ws; length = 10 * rs; surfaceHeight = 1.3;
         } else {
           const rs = 3 + Math.random() * 4;
           feature = this.createKinkRail(rs, ws);
-          type = 'rail'; width = 1.5 * ws; length = 10 * rs; surfaceHeight = 1.8;
+          width = 1.5 * ws; length = 10 * rs; surfaceHeight = 1.8;
         }
       } else {
-        // ===== LEVEL 1: Freeride course (current sizes) =====
-        if (roll < 0.15) {
-          feature = this.createJump(30);
-          type = 'kicker'; width = 4; length = 5; size = 'small';
-          lipHeight = 2.0; lipAngle = 0.45;
-        } else if (roll < 0.3) {
-          feature = this.createJump(40);
-          type = 'kicker'; width = 5; length = 7; size = 'medium';
-          lipHeight = 2.7; lipAngle = 0.55;
-        } else if (roll < 0.4) {
-          feature = this.createJump(50);
-          type = 'kicker'; width = 6; length = 9; size = 'big';
-          lipHeight = 3.3; lipAngle = 0.62;
-        } else if (roll < 0.47) {
-          feature = this.createJump(60);
-          type = 'kicker'; width = 7; length = 11; size = 'big';
-          lipHeight = 4.0; lipAngle = 0.65;
-        } else if (roll < 0.57) {
+        if (roll < 0.17) {
           const rs = 2 + Math.random() * 3;
           feature = this.createFlatRail(rs);
-          type = 'rail'; width = 1.5; length = 8 * rs; surfaceHeight = 1.2;
-        } else if (roll < 0.65) {
+          width = 1.5; length = 8 * rs; surfaceHeight = 1.2;
+        } else if (roll < 0.33) {
           const rs = 2 + Math.random() * 3;
           feature = this.createDownRail(rs);
-          type = 'rail'; width = 1.5; length = 10 * rs; surfaceHeight = 1.5;
-        } else if (roll < 0.73) {
+          width = 1.5; length = 10 * rs; surfaceHeight = 1.5;
+        } else if (roll < 0.50) {
           const rs = 2 + Math.random() * 3;
           feature = this.createRainbowRail(rs);
-          type = 'rail'; width = 1.5; length = 10 * rs; surfaceHeight = 2.0;
-        } else if (roll < 0.8) {
+          width = 1.5; length = 10 * rs; surfaceHeight = 2.0;
+        } else if (roll < 0.63) {
           const rs = 2 + Math.random() * 3;
           feature = this.createFlatDownFlatRail(rs);
-          type = 'rail'; width = 1.5; length = 12 * rs; surfaceHeight = 1.5;
-        } else if (roll < 0.87) {
+          width = 1.5; length = 12 * rs; surfaceHeight = 1.5;
+        } else if (roll < 0.76) {
           const rs = 2 + Math.random() * 3;
           feature = this.createBox(rs);
-          type = 'rail'; width = 2; length = 8 * rs; surfaceHeight = 1.0;
-        } else if (roll < 0.93) {
+          width = 2; length = 8 * rs; surfaceHeight = 1.0;
+        } else if (roll < 0.88) {
           const rs = 2 + Math.random() * 3;
           feature = this.createCRail(rs);
-          type = 'rail'; width = 2; length = 10 * rs; surfaceHeight = 1.3;
+          width = 2; length = 10 * rs; surfaceHeight = 1.3;
         } else {
           const rs = 2 + Math.random() * 3;
           feature = this.createKinkRail(rs);
-          type = 'rail'; width = 1.5; length = 10 * rs; surfaceHeight = 1.8;
+          width = 1.5; length = 10 * rs; surfaceHeight = 1.8;
         }
       }
 
-      // Sample min height across the feature footprint and sink slightly to embed in snow
       const halfW = width / 2;
       const halfL = length / 2;
       const featureGlobalZ = zOffset + z;
@@ -274,31 +293,17 @@ export class Terrain {
           if (h < minY) minY = h;
         }
       }
-      minY -= 0.3; // sink into snow so edges never float
+      minY -= 0.3;
 
       feature.position.set(x, minY, featureGlobalZ);
       this.scene.add(feature);
       chunk.objects.push(feature);
-      const rampData = {
+      this.ramps.push({
         mesh: feature,
         position: new THREE.Vector3(x, minY, featureGlobalZ),
-        type, width, length, size, lipHeight, lipAngle, surfaceHeight,
-      };
-
-      // Store landing zone data for kickers
-      if (type === 'kicker' && feature.userData.landing) {
-        const ld = feature.userData.landing;
-        const lipZ = featureGlobalZ - length / 2; // lip Z in world coords
-        rampData.landingZoneStartZ = lipZ;
-        rampData.landingZoneEndZ = lipZ - ld.gap - ld.length;
-        rampData.landingTopHeight = minY + ld.topLocalY;
-        rampData.landingBottomHeight = this.computeHeight(x, lipZ - ld.gap - ld.length) - 0.3;
-        rampData.landingWidth = ld.width;
-        rampData.landingGap = ld.gap;
-        rampData.landingLength = ld.length;
-      }
-
-      this.ramps.push(rampData);
+        type: 'rail', width, length, surfaceHeight,
+        lipHeight: 0, lipAngle: 0,
+      });
     }
 
     // Checkpoints

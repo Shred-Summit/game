@@ -1,0 +1,13 @@
+{
+  "hosting": {
+    "site": "shred-summit-3079f",
+    "public": "dist",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

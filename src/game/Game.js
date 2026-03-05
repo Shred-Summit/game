@@ -62,6 +62,7 @@ export class Game {
     this.currentCheckpoint = 0;
     this.lastCheckpointPos = new THREE.Vector3(0, 5, 0);
     this.checkpointAlertTime = 0;
+    this.checkpointScore = 0; // score saved at last checkpoint
 
     // Crash state
     this.deathTimer = 0;
@@ -793,6 +794,7 @@ export class Game {
         this.currentCheckpoint++;
         this.checkpointAlertTime = performance.now();
         this.tricks.totalScore += 500 * this.currentCheckpoint;
+        this.checkpointScore = this.tricks.totalScore;
 
         // Finish line reached!
         if (cp.isFinish) {
@@ -861,6 +863,9 @@ export class Game {
     this.input.keys['Space'] = false;
     this.input.justPressed['Space'] = false;
     this.input._previousKeys['Space'] = true;
+
+    // Restore score to checkpoint value
+    this.tricks.totalScore = this.checkpointScore;
 
     // Show touch controls on mobile
     if (this.touchControls) this.touchControls.show();
@@ -1028,6 +1033,7 @@ export class Game {
 
     // Reset trick score and quest run tracking
     this.tricks.totalScore = 0;
+    this.checkpointScore = 0;
     this.quests.onRunStart();
     this.tricks.comboMultiplier = 1;
     this.tricks.comboTimer = 0;

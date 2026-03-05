@@ -8,12 +8,13 @@ import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, on
 // console.firebase.google.com → Project Settings → Your Apps → Web
 // ==========================================
 const firebaseConfig = {
-  apiKey: '',
-  authDomain: '',
-  projectId: '',
-  storageBucket: '',
-  messagingSenderId: '',
-  appId: '',
+  apiKey: 'AIzaSyAnY8TV6Ts1kb7bDKsaTmzjHb8LXeokfAw',
+  authDomain: 'shred-summit-3079f.firebaseapp.com',
+  projectId: 'shred-summit-3079f',
+  storageBucket: 'shred-summit-3079f.firebasestorage.app',
+  messagingSenderId: '617043389770',
+  appId: '1:617043389770:web:13dee92542cd7dcf21a5b3',
+  measurementId: 'G-LRXJE5CLPV',
 };
 
 let db = null;
