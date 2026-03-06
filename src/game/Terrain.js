@@ -167,11 +167,10 @@ export class Terrain {
           // Landing starts after the air gap (space between lip and landing surface)
           rampData.landingZoneStartZ = lipZ - (ld.airGap || 0);
           rampData.landingZoneEndZ = lipZ - (ld.airGap || 0) - ld.gap - ld.length;
-          // Landing hitbox heights based on terrain at the landing position (not ramp base)
-          const terrainAtStart = this.computeHeight(x, rampData.landingZoneStartZ);
-          const terrainAtEnd = this.computeHeight(x, rampData.landingZoneEndZ);
-          rampData.landingTopHeight = terrainAtStart + 2.0;
-          rampData.landingBottomHeight = terrainAtEnd + 1.0;
+          // Landing hitbox heights from the visual mesh's local coordinates + ramp world Y
+          // This ensures collision surface matches the visible landing surface exactly
+          rampData.landingTopHeight = minY + ld.topLocalY;
+          rampData.landingBottomHeight = minY + ld.endLocalY;
           rampData.landingWidth = ld.width;
           rampData.landingGap = ld.gap;
           rampData.landingLength = ld.length;
@@ -230,10 +229,9 @@ export class Terrain {
         const lipZ = booterGlobalZ - bLength / 2;
         booterData.landingZoneStartZ = lipZ - (ld.airGap || 0);
         booterData.landingZoneEndZ = lipZ - (ld.airGap || 0) - ld.gap - ld.length;
-        const terrainAtStart = this.computeHeight(bx, booterData.landingZoneStartZ);
-        const terrainAtEnd = this.computeHeight(bx, booterData.landingZoneEndZ);
-        booterData.landingTopHeight = terrainAtStart + 2.0;
-        booterData.landingBottomHeight = terrainAtEnd + 1.0;
+        // Landing hitbox heights from the visual mesh's local coordinates + ramp world Y
+        booterData.landingTopHeight = bMinY + ld.topLocalY;
+        booterData.landingBottomHeight = bMinY + ld.endLocalY;
         booterData.landingWidth = ld.width;
         booterData.landingGap = ld.gap;
         booterData.landingLength = ld.length;
