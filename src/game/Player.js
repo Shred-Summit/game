@@ -132,8 +132,20 @@ export class Player {
     this.hipsMesh.position.set(0, 0.55, 0); this.riderGroup.add(this.hipsMesh);
 
     // Torso
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.25), jacketMat);
-    torso.position.set(0, 0.85, 0); torso.castShadow = true; this.riderGroup.add(torso);
+    this.torsoMesh = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.25), jacketMat);
+    this.torsoMesh.position.set(0, 0.85, 0); this.torsoMesh.castShadow = true; this.riderGroup.add(this.torsoMesh);
+
+    // Jacket brand logo decal (thin plane on chest)
+    this.jacketLogoMat = new THREE.MeshStandardMaterial({
+      transparent: true, alphaTest: 0.5, depthWrite: false, roughness: 0.8,
+      polygonOffset: true, polygonOffsetFactor: -1,
+    });
+    this.jacketLogoPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.22, 0.15), this.jacketLogoMat
+    );
+    this.jacketLogoPlane.position.set(0, 0.85, 0.126);
+    this.jacketLogoPlane.visible = false;
+    this.riderGroup.add(this.jacketLogoPlane);
 
     // Neck + Head
     this.neckGroup = new THREE.Group();
@@ -279,34 +291,36 @@ export class Player {
   }
 
   buildSnowboard() {
-    const board = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 1.9), this.boardMat);
-    board.castShadow = true;
+    this.boardMesh = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 1.9), this.boardMat);
+    this.boardMesh.castShadow = true;
 
     const frontPad = new THREE.Mesh(
       new THREE.BoxGeometry(0.28, 0.065, 0.35),
       new THREE.MeshStandardMaterial({ color: 0xff5722 })
     );
     frontPad.position.set(0, 0.005, 0.3);
-    board.add(frontPad);
+    this.boardMesh.add(frontPad);
 
     const rearPad = new THREE.Mesh(
       new THREE.BoxGeometry(0.28, 0.065, 0.2),
       new THREE.MeshStandardMaterial({ color: 0xffc107 })
     );
     rearPad.position.set(0, 0.005, -0.4);
-    board.add(rearPad);
+    this.boardMesh.add(rearPad);
 
     const nose = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 0.2), this.boardMat);
-    nose.position.set(0, 0.04, 0.95); nose.rotation.x = 0.3; board.add(nose);
+    nose.position.set(0, 0.04, 0.95); nose.rotation.x = 0.3; this.boardMesh.add(nose);
     const tail = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 0.2), this.boardMat);
-    tail.position.set(0, 0.04, -0.95); tail.rotation.x = -0.3; board.add(tail);
+    tail.position.set(0, 0.04, -0.95); tail.rotation.x = -0.3; this.boardMesh.add(tail);
 
-    const bindMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+    this.bindingMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+    this.bindings = [];
     for (const z of [0.35, -0.3]) {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.18), bindMat);
-      b.position.set(0, 0.06, z); board.add(b);
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.18), this.bindingMat);
+      b.position.set(0, 0.06, z); this.boardMesh.add(b);
+      this.bindings.push(b);
     }
-    this.boardGroup.add(board);
+    this.boardGroup.add(this.boardMesh);
   }
 
   buildSkis() {
@@ -1395,8 +1409,39 @@ export class Player {
     switch (part) {
       case 'jacket': this.jacketMat.color.copy(color); break;
       case 'pants': this.pantsMat.color.copy(color); break;
-      case 'board': this.boardMat.color.copy(color); break;
+      case 'board':
+        if (this.boardMat.map) {
+          // Texture applied — set white so canvas colors show true
+          this.boardMat.color.set(0xffffff);
+        } else {
+          this.boardMat.color.copy(color);
+        }
+        break;
       case 'helmet': this.helmetMat.color.copy(color); break;
+    }
+  }
+
+  applyBoardGraphic(texture) {
+    this.boardMat.map = texture || null;
+    this.boardMat.needsUpdate = true;
+    if (texture) {
+      this.boardMat.color.set(0xffffff);
+    }
+  }
+
+  applyJacketLogo(texture) {
+    if (texture) {
+      this.jacketLogoMat.map = texture;
+      this.jacketLogoMat.needsUpdate = true;
+      this.jacketLogoPlane.visible = true;
+    } else {
+      this.jacketLogoPlane.visible = false;
+    }
+  }
+
+  setBindingColor(colorHex) {
+    if (this.bindingMat) {
+      this.bindingMat.color.set(colorHex);
     }
   }
 

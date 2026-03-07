@@ -10,6 +10,7 @@ import { NicknameManager } from './NicknameManager.js';
 import { QuestSystem } from './QuestSystem.js';
 import { ShopSystem } from './ShopSystem.js';
 import { RidePass } from './RidePass.js';
+import { createBoardTexture, createJacketLogo } from './BoardGraphics.js';
 
 export class Game {
   constructor() {
@@ -2006,26 +2007,34 @@ export class Game {
   applyEquippedItems() {
     const equipped = this.shop.getEquipped();
 
-    // Apply clothing colors + baggy pants
+    // Apply clothing colors + baggy pants + jacket logos
     let isBaggy = false;
     for (const category of ['jacket', 'pants', 'helmet']) {
       const item = this.shop.getEquippedItem(category);
       if (item) {
         this.player.setColor(category, item.color);
         if (category === 'pants' && item.baggy) isBaggy = true;
+        if (category === 'jacket') {
+          this.player.applyJacketLogo(createJacketLogo(item.brand, item.color));
+        }
+      } else if (category === 'jacket') {
+        this.player.applyJacketLogo(null);
       }
     }
     this.player.setBaggyPants(isBaggy);
 
-    // Apply board/ski color and stats
+    // Apply board/ski color, stats, graphics, and binding color
     const boardItem = this.shop.getEquippedItem('board');
     if (boardItem && boardItem.stats) {
-      // Always apply equipped board/ski color (overrides lobby swatch)
+      const boardTexture = createBoardTexture(boardItem.id, boardItem.color);
+      this.player.applyBoardGraphic(boardTexture);
       this.player.setColor('board', boardItem.color);
       this.player.applyBoardStats(boardItem.stats.speed, boardItem.stats.pop, boardItem.stats.flex);
+      this.player.setBindingColor(boardItem.bindingColor || 0x222222);
     } else {
-      // Default stats (5/5/5 = 1.0x multipliers)
+      this.player.applyBoardGraphic(null);
       this.player.applyBoardStats(5, 5, 5);
+      this.player.setBindingColor(0x222222);
     }
   }
 

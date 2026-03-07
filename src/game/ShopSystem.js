@@ -50,6 +50,7 @@ const ITEMS = [
   { id: 'burton-process', brand: 'BURTON', name: 'Process', category: 'board', equipType: 'snowboard', tier: B, cost: 3, color: 0xff6f00, stats: { speed: 5, pop: 7, flex: 9 }, style: 'Park/Jib' },
   { id: 'capita-mega-merc', brand: 'CAPiTA', name: 'Mega Merc', category: 'board', equipType: 'snowboard', tier: B, cost: 3, color: 0x6a1b9a, stats: { speed: 8, pop: 8, flex: 5 }, style: 'Aggressive' },
   { id: 'yes-standard', brand: 'YES.', name: 'Standard', category: 'board', equipType: 'snowboard', tier: B, cost: 3, color: 0xf9a825, stats: { speed: 7, pop: 6, flex: 8 }, style: 'All-Mountain' },
+  { id: 'yes-eiki', brand: 'YES.', name: 'Eiki Pro', category: 'board', equipType: 'snowboard', tier: B, cost: 25, color: 0x000000, stats: { speed: 10, pop: 10, flex: 10 }, style: 'Pro Model', bindingColor: 0x1565c0 },
 
   // === SKIS (Board - 3 tokens) ===
   { id: '1000skis-rival', brand: '1000 SKIS', name: 'Rival', category: 'board', equipType: 'ski', tier: B, cost: 3, color: 0xd32f2f, stats: { speed: 7, pop: 8, flex: 7 }, style: 'Park' },
