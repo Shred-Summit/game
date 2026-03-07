@@ -2007,7 +2007,7 @@ export class Game {
   applyEquippedItems() {
     const equipped = this.shop.getEquipped();
 
-    // Apply clothing colors + baggy pants + jacket logos
+    // Apply clothing colors + baggy pants + jacket logos + legendary effects
     let isBaggy = false;
     for (const category of ['jacket', 'pants', 'helmet']) {
       const item = this.shop.getEquippedItem(category);
@@ -2016,9 +2016,21 @@ export class Game {
         if (category === 'pants' && item.baggy) isBaggy = true;
         if (category === 'jacket') {
           this.player.applyJacketLogo(createJacketLogo(item.brand, item.color));
+          this.player.setLegendaryMaterial('jacket', !!item.legendary);
         }
-      } else if (category === 'jacket') {
-        this.player.applyJacketLogo(null);
+        if (category === 'pants') {
+          this.player.setLegendaryMaterial('pants', !!item.legendary);
+        }
+        if (category === 'helmet') {
+          this.player.setHaloMode(item.id === 'legend-halo-helmet');
+        }
+      } else {
+        if (category === 'jacket') {
+          this.player.applyJacketLogo(null);
+          this.player.setLegendaryMaterial('jacket', false);
+        }
+        if (category === 'pants') this.player.setLegendaryMaterial('pants', false);
+        if (category === 'helmet') this.player.setHaloMode(false);
       }
     }
     this.player.setBaggyPants(isBaggy);

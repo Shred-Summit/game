@@ -39,7 +39,7 @@ const ITEMS = [
 
   // === LEGENDARY ITEMS (S3 - 1 token) ===
   { id: 'legend-gold-jacket', brand: 'SHRED SUMMIT', name: 'Gold Rush Jacket', category: 'jacket', tier: S3, cost: 1, color: 0xffd700, legendary: true },
-  { id: 'legend-chrome-pants', brand: 'SHRED SUMMIT', name: 'Chrome Pants', category: 'pants', tier: S3, cost: 1, color: 0xc0c0c0, legendary: true },
+  { id: 'legend-chrome-pants', brand: 'SHRED SUMMIT', name: 'Chrome Pants', category: 'pants', tier: S3, cost: 1, color: 0xc0c0c0, legendary: true, baggy: true },
   { id: 'legend-halo-helmet', brand: 'SHRED SUMMIT', name: 'Halo Helmet', category: 'helmet', tier: S3, cost: 1, color: 0x00e5ff, legendary: true },
 
   // === SNOWBOARDS (Board - 3 tokens) ===

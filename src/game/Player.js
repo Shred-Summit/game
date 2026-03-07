@@ -160,10 +160,35 @@ export class Player {
     head.position.set(0, 0.17, 0); head.castShadow = true; this.headGroup.add(head);
 
     this.helmetMat = new THREE.MeshStandardMaterial({ color: 0x212121 });
-    const helmet = new THREE.Mesh(
+    this.helmetMesh = new THREE.Mesh(
       new THREE.SphereGeometry(0.18, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.55),
       this.helmetMat);
-    helmet.position.set(0, 0.21, 0); this.headGroup.add(helmet);
+    this.helmetMesh.position.set(0, 0.21, 0); this.headGroup.add(this.helmetMesh);
+
+    // --- Halo mode (legendary helmet replacement): curly hair + floating halo ring ---
+    this.hairGroup = new THREE.Group();
+    this.hairGroup.visible = false;
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0x5c3317, roughness: 0.95 });
+    const curls = [
+      [0, 0.28, 0, 0.07], [-0.09, 0.26, 0.06, 0.06], [0.09, 0.26, 0.06, 0.06],
+      [0, 0.26, -0.08, 0.06], [-0.07, 0.3, -0.04, 0.055], [0.07, 0.3, -0.04, 0.055],
+      [-0.05, 0.31, 0.05, 0.05], [0.05, 0.31, 0.05, 0.05],
+    ];
+    for (const [x, y, z, r] of curls) {
+      const curl = new THREE.Mesh(new THREE.SphereGeometry(r, 6, 4), hairMat);
+      curl.position.set(x, y, z);
+      this.hairGroup.add(curl);
+    }
+    this.headGroup.add(this.hairGroup);
+
+    this.haloMesh = new THREE.Mesh(
+      new THREE.TorusGeometry(0.2, 0.02, 8, 24),
+      new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffd700, emissiveIntensity: 0.5, metalness: 0.9, roughness: 0.1 })
+    );
+    this.haloMesh.rotation.x = -Math.PI / 2;
+    this.haloMesh.position.set(0, 0.4, 0);
+    this.haloMesh.visible = false;
+    this.headGroup.add(this.haloMesh);
 
     const goggles = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, 0.08),
       new THREE.MeshStandardMaterial({ color: 0xff9800, metalness: 0.7, roughness: 0.1 }));
@@ -1454,6 +1479,22 @@ export class Player {
     // Slightly widen hips (keep subtle so no big rectangle)
     const hipS = isBaggy ? 1.15 : 1.0;
     this.hipsMesh.scale.set(hipS, 1, hipS);
+  }
+
+  setHaloMode(enabled) {
+    this.helmetMesh.visible = !enabled;
+    this.hairGroup.visible = enabled;
+    this.haloMesh.visible = enabled;
+  }
+
+  setLegendaryMaterial(part, enabled) {
+    if (part === 'jacket') {
+      this.jacketMat.metalness = enabled ? 0.8 : 0;
+      this.jacketMat.roughness = enabled ? 0.15 : 0.8;
+    } else if (part === 'pants') {
+      this.pantsMat.metalness = enabled ? 0.9 : 0;
+      this.pantsMat.roughness = enabled ? 0.1 : 0.9;
+    }
   }
 
   applyBoardStats(speed, pop, flex) {
