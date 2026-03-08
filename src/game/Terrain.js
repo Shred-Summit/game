@@ -12,6 +12,7 @@ export class Terrain {
     this.ramps = [];
     this.exclusionZones = []; // global across all chunks { x, zStart, zEnd, halfWidth }
     this.checkpoints = [];
+    this.checkpointCount = 8;
     this.checkpointInterval = 600;
     this.nextCheckpointZ = -300;
 
@@ -1186,5 +1187,17 @@ export class Terrain {
       old.mesh.geometry.dispose();
       for (const obj of old.objects) this.scene.remove(obj);
     }
+  }
+
+  dispose() {
+    for (const chunk of this.chunks) {
+      this.scene.remove(chunk.mesh);
+      chunk.mesh.geometry.dispose();
+      for (const obj of chunk.objects) this.scene.remove(obj);
+    }
+    this.chunks = [];
+    this.obstacles = [];
+    this.ramps = [];
+    this.checkpoints = [];
   }
 }

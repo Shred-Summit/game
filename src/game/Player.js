@@ -78,6 +78,21 @@ export class Player {
     this.landingTolerance = Math.PI * (45 / 180); // 45 degrees — forgiving landings
     this.rollLandingTolerance = Math.PI * (90 / 180); // 90 degrees — roll is hard to control
 
+    // Tomahawk — tumbling recovery instead of death (backcountry only)
+    this.tomahawking = false;
+    this.tomahawkTimer = 0;
+    this.tomahawkRotation = 0;
+    this.tomahawkDuration = 2.0;  // seconds for 3 full rotations
+    this.tomahawkCount = 3;       // number of tumble rotations
+    this.backcountryMode = false; // set by Game.js — enables tomahawk instead of crash
+
+    // River rescue state (Peak backcountry)
+    this.inRiver = false;
+    this.riverZone = null;       // reference to the river zone data
+    this.daveRescuing = false;   // true when following Dave out
+    this.daveWaypoints = [];     // escape path waypoints
+    this.daveWaypointIndex = 0;
+
     // Capsule hitbox: center = position, radius, half-height
     this.capsuleRadius = 0.4;
     this.capsuleHalfH = 0.8;
@@ -427,6 +442,11 @@ export class Player {
       return this.getState(terrain);
     }
 
+    if (this.tomahawking) {
+      this.updateTomahawk(dt, terrain);
+      return this.getState(terrain);
+    }
+
     this.wasGrounded = this.grounded;
     this.wasGrinding = this.grinding;
     this.landedOnRail = false; // one-shot: cleared each frame, set by _initGrindFromAir
@@ -511,15 +531,23 @@ export class Player {
         if (flipRemainder > this.landingTolerance ||
             spinRemainder > this.landingTolerance ||
             rollRemainder > this.rollLandingTolerance) {
-          this.triggerCrash();
+          if (this.backcountryMode) {
+            this.triggerTomahawk(terrain);
+          } else {
+            this.triggerCrash();
+          }
           return this.getState(terrain);
         }
       }
 
-      // Fall damage — landing zone slope absorbs vertical impact
+      // Fall damage — backcountry: tomahawk, park: crash
       const effectiveVY = this.velocity.y * (1 - this.landingZoneSlopeAbsorb);
       if (effectiveVY < -35) {
-        this.triggerCrash();
+        if (this.backcountryMode) {
+          this.triggerTomahawk(terrain);
+        } else {
+          this.triggerCrash();
+        }
         return this.getState(terrain);
       }
 
@@ -913,7 +941,8 @@ export class Player {
       const isCork = flipping && spinning;
       this.isCorkingThisJump = this.isCorkingThisJump || isCork;
       if (isCork && this.corkFlipDirection === 0) {
-        this.corkFlipDirection = input.flipForward ? -1 : 1;
+        // W = visual backflip (+1), S = visual frontflip (-1)
+        this.corkFlipDirection = input.flipForward ? 1 : -1;
         this.corkSpinDirection = input.spinLeft ? 1 : -1;
       }
 
@@ -1024,8 +1053,35 @@ export class Player {
       }
     }
 
-    // ===== MOVE =====
-    this.position.add(this.velocity.clone().multiplyScalar(dt));
+    // ===== RIVER COLLISION (Peak backcountry) =====
+    if (terrain.riverZones && terrain.riverZones.length > 0 && !this.inRiver) {
+      this.checkRiverCollision(terrain);
+      if (this.inRiver) {
+        return this.getState(terrain);
+      }
+    }
+    if (this.inRiver) {
+      this.updateRiverState(dt, terrain);
+      return this.getState(terrain);
+    }
+
+    // ===== MOVE (sub-stepped for steep terrain) =====
+    const moveVec = this.velocity.clone().multiplyScalar(dt);
+    const moveDistZ = Math.abs(moveVec.z);
+    // Sub-step if moving fast enough to skip over cliff bands (~3 unit steps)
+    const subSteps = Math.max(1, Math.ceil(moveDistZ / 3));
+    const stepVec = moveVec.clone().divideScalar(subSteps);
+
+    for (let step = 0; step < subSteps; step++) {
+      this.position.add(stepVec);
+
+      const stepFloorH = terrain.getHeightAt(this.position.x, this.position.z);
+      if (this.position.y < stepFloorH + groundOffset) {
+        this.position.y = stepFloorH + groundOffset;
+        if (this.velocity.y < 0) this.velocity.y = 0;
+        if (!this.grinding) this.grounded = true;
+      }
+    }
 
     // Snap to terrain after movement when grounded (prevents 1-frame float/clip)
     if (this.grounded && !this.grinding) {
@@ -1033,7 +1089,7 @@ export class Player {
       this.position.y = newSurfaceH + groundOffset;
     }
 
-    // Hard floor clamp (absolute safety net)
+    // Final floor clamp safety net
     const floorH = terrain.getHeightAt(this.position.x, this.position.z);
     if (this.position.y < floorH + groundOffset) {
       this.position.y = floorH + groundOffset;
@@ -1041,7 +1097,8 @@ export class Player {
       if (!this.grinding) this.grounded = true;
     }
 
-    this.position.x = THREE.MathUtils.clamp(this.position.x, -50, 50);
+    const xBound = terrain.chunkWidth ? (terrain.chunkWidth / 2 - 10) : 50;
+    this.position.x = THREE.MathUtils.clamp(this.position.x, -xBound, xBound);
 
     // Grab & tuck & default air animations
     if (this.isGrabbing && !this.grounded) {
@@ -1516,6 +1573,67 @@ export class Player {
     }
   }
 
+  triggerTomahawk(terrain) {
+    this.tomahawking = true;
+    this.tomahawkTimer = 0;
+    this.tomahawkRotation = 0;
+    this.grounded = true; // Mark as landed so TrickSystem scores the trick
+    this.onKicker = null;
+    this.grinding = false;
+    this.grindRail = null;
+    this.isGrabbing = false;
+    this.grabType = null;
+    // DON'T reset trickRotation — let TrickSystem score the trick first
+    // The tomahawk is purely visual, trick still counts
+    // Keep forward momentum — slide downhill while tumbling
+    const speed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+    this.velocity.set(0, 0, -Math.max(speed * 0.5, 8));
+  }
+
+  updateTomahawk(dt, terrain) {
+    this.tomahawkTimer += dt;
+
+    // Clear trick rotation after first frame (trick was already scored on landing frame)
+    if (this.tomahawkTimer <= dt * 2) {
+      this.trickRotation.set(0, 0, 0);
+      this.isCorkingThisJump = false;
+      this.corkFlipDirection = 0;
+      this.corkSpinDirection = 0;
+    }
+
+    // Rotate the whole group forward (tomahawk = forward tumble)
+    const totalRot = this.tomahawkCount * Math.PI * 2;
+    const progress = Math.min(this.tomahawkTimer / this.tomahawkDuration, 1.0);
+    this.tomahawkRotation = totalRot * progress;
+    this.group.rotation.x = -this.tomahawkRotation;
+
+    // Keep sliding downhill, stick to terrain
+    this.position.x += this.velocity.x * dt;
+    this.position.z += this.velocity.z * dt;
+    const groundY = terrain.getHeightAt(this.position.x, this.position.z);
+    this.position.y = groundY + 1.0;
+    this.group.position.copy(this.position);
+
+    // Slow down during tumble
+    this.velocity.x *= 0.98;
+    this.velocity.z *= 0.98;
+
+    // After 3 rotations, recover
+    if (progress >= 1.0) {
+      this.tomahawking = false;
+      this.tomahawkTimer = 0;
+      this.tomahawkRotation = 0;
+      this.group.rotation.x = 0;
+      this.grounded = true;
+      this.airTime = 0;
+      // Resume at a reasonable speed
+      const resumeSpeed = Math.max(Math.abs(this.velocity.z), 10);
+      this.velocity.set(0, 0, -resumeSpeed);
+      this.position.y = groundY + 0.5;
+      this.group.position.copy(this.position);
+    }
+  }
+
   triggerCrash() {
     this.crashed = true;
     this.crashTimer = 0;
@@ -1648,6 +1766,11 @@ export class Player {
     this.grindTime = 0;
     this.landingImpact = 0;
     this.landingImpactVel = 0;
+    this.inRiver = false;
+    this.riverZone = null;
+    this.daveRescuing = false;
+    this.daveWaypoints = [];
+    this.daveWaypointIndex = 0;
 
     this.boardGroup.rotation.set(0, 0, 0);
     this.riderGroup.position.set(0, 0, 0);
@@ -1714,6 +1837,104 @@ export class Player {
     }
   }
 
+  // ---- RIVER RESCUE SYSTEM ----
+
+  checkRiverCollision(terrain) {
+    for (const zone of terrain.riverZones) {
+      if (zone.type === 'gap') {
+        const dz = this.position.z - zone.z;
+        const dx = Math.abs(this.position.x - zone.xCenter);
+        // Check if player is inside the gap channel AND below the lip (fell in, not jumping over)
+        if (Math.abs(dz) < zone.halfGapZ && dx < zone.halfWidthX) {
+          const lipHeight = terrain.getHeightAt(zone.xCenter, zone.z + zone.halfGapZ);
+          if (this.position.y < lipHeight - 1) {
+            this.enterRiver(zone);
+            return;
+          }
+        }
+      } else if (zone.type === 'basin') {
+        const dz = Math.abs(this.position.z - zone.z);
+        const dx = Math.abs(this.position.x - zone.xCenter);
+        if (dz < zone.halfLenZ && dx < zone.halfWidthX) {
+          this.enterRiver(zone);
+          return;
+        }
+      }
+    }
+  }
+
+  enterRiver(zone) {
+    this.inRiver = true;
+    this.riverZone = zone;
+    this.daveRescuing = false;
+    this.daveWaypoints = zone.escapePath || [];
+    this.daveWaypointIndex = 0;
+    // Kill most velocity — stuck in the river
+    this.velocity.set(0, 0, 0);
+    this.grounded = true;
+    this.airTime = 0;
+  }
+
+  updateRiverState(dt, terrain) {
+    if (!this.daveRescuing) {
+      // Waiting for Dave — player nearly stops, can wiggle slightly
+      this.velocity.multiplyScalar(0.9);
+      // Snap to terrain
+      const h = terrain.getHeightAt(this.position.x, this.position.z);
+      this.position.y = h + 0.08;
+      this.group.position.copy(this.position);
+      return;
+    }
+
+    // Following Dave along escape waypoints
+    if (this.daveWaypointIndex >= this.daveWaypoints.length) {
+      this.exitRiver();
+      return;
+    }
+
+    const wp = this.daveWaypoints[this.daveWaypointIndex];
+    const targetX = wp.x;
+    const targetZ = wp.z;
+    const dx = targetX - this.position.x;
+    const dz = targetZ - this.position.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    if (dist < 3) {
+      this.daveWaypointIndex++;
+      if (this.daveWaypointIndex >= this.daveWaypoints.length) {
+        this.exitRiver();
+        return;
+      }
+    }
+
+    // Move toward waypoint at speed 8
+    const speed = 8;
+    const dirX = dx / dist;
+    const dirZ = dz / dist;
+    this.position.x += dirX * speed * dt;
+    this.position.z += dirZ * speed * dt;
+    const h = terrain.getHeightAt(this.position.x, this.position.z);
+    this.position.y = h + 0.08;
+
+    // Face movement direction
+    this.heading = Math.atan2(-dirX, -dirZ);
+    this.visualYaw = this.heading;
+    this.group.position.copy(this.position);
+    this.group.rotation.y = this.visualYaw;
+  }
+
+  exitRiver() {
+    this.inRiver = false;
+    this.riverZone = null;
+    this.daveRescuing = false;
+    this.daveWaypoints = [];
+    this.daveWaypointIndex = 0;
+    // Give a forward push to resume riding
+    this.velocity.set(0, 0, -12);
+    this.heading = Math.PI;
+    this.visualYaw = Math.PI;
+  }
+
   getState(terrain) {
     const terrainH = terrain ? terrain.getHeightAt(this.position.x, this.position.z) : 0;
     const heightAbove = Math.max(0, this.position.y - terrainH - 0.08);
@@ -1729,6 +1950,7 @@ export class Player {
       grabType: this.grabType,
       speed: Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2),
       crashed: this.crashed,
+      tomahawking: this.tomahawking,
       position: this.position.clone(),
       jumpHeightFeet: heightFeet,
       peakHeightFeet: peakFeet,
@@ -1746,6 +1968,8 @@ export class Player {
       landedOnRail: this.landedOnRail,
       isSwitch: this.isSwitch,
       grindAborted: this.grindAborted,
+      inRiver: this.inRiver,
+      daveRescuing: this.daveRescuing,
     };
   }
 }

@@ -5,12 +5,13 @@ import { TrickSystem } from './TrickSystem.js';
 import { InputManager, isTouchDevice } from './InputManager.js';
 import { TouchControls } from './TouchControls.js';
 import { SnowParticles } from './Particles.js';
-import { initFirebase, isFirebaseConfigured, submitScore, fetchWorldwideScores, getWeekId, getFirebaseAuth, createAccount, loginAccount, logoutAccount, resetPassword, onAuthChange, cloudSaveProgress, cloudLoadProgress } from './firebase.js';
+import { initFirebase, isFirebaseConfigured, submitScore, fetchWorldwideScores, getWeekId, getFirebaseAuth, createAccount, loginAccount, logoutAccount, resetPassword, onAuthChange, cloudSaveProgress, cloudLoadProgress, submitSummitScore, fetchSummitScores } from './firebase.js';
 import { NicknameManager } from './NicknameManager.js';
 import { QuestSystem } from './QuestSystem.js';
 import { ShopSystem } from './ShopSystem.js';
 import { RidePass } from './RidePass.js';
 import { createBoardTexture, createJacketLogo } from './BoardGraphics.js';
+import { BackcountryTerrain } from './BackcountryTerrain.js';
 
 export class Game {
   constructor() {
@@ -33,6 +34,9 @@ export class Game {
     this.initLights();
 
     this.terrain = new Terrain(this.scene);
+    this.parkTerrain = this.terrain; // keep reference to default park terrain
+    this.gameMode = 'park';          // 'park' | 'backcountry'
+    this.backcountryChair = null;    // 'summit', 'biggie', 'peak'
     this.selectedEquipment = 'snowboard';
     this.selectedStance = 'regular';
     this.player = new Player(this.scene, this.selectedEquipment);
@@ -77,6 +81,14 @@ export class Game {
     this.skiPatrol = [];
     this.skiPatrolActive = false;
     this.initSkiPatrol();
+
+    // Dave NPC — river rescue guide (Peak backcountry)
+    this.dave = null;
+    this.daveState = 'hidden'; // hidden, appearing, leading, waving, departing
+    this.daveTimer = 0;
+    this.daveWaypointIndex = 0;
+    this.daveWaypoints = [];
+    this.initDave();
 
     // UI elements
     this.ui = {
@@ -130,6 +142,9 @@ export class Game {
       shopS2Count: document.getElementById('shop-s2-count'),
       shopS3Count: document.getElementById('shop-s3-count'),
       shopBoardCount: document.getElementById('shop-board-count'),
+      mapPanel: document.getElementById('map-panel'),
+      mapBack: document.getElementById('map-back'),
+      lobbyMap: document.getElementById('lobby-map'),
       ridepassPanel: document.getElementById('ridepass-panel'),
       ridepassBack: document.getElementById('ridepass-back'),
       lobbyRidepass: document.getElementById('lobby-ridepass'),
@@ -143,6 +158,7 @@ export class Game {
       rpTitleSection: document.getElementById('rp-title-section'),
       rpTitleOptions: document.getElementById('rp-title-options'),
       finishScreen: document.getElementById('finish-screen'),
+      finishTitle: document.getElementById('finish-title'),
       finishScore: document.getElementById('finish-score'),
       finishCatchphrase: document.getElementById('finish-catchphrase'),
       newRecordLabel: document.getElementById('new-record-label'),
@@ -173,6 +189,7 @@ export class Game {
 
     // Leaderboard (localStorage)
     this.leaderboard = this.loadLeaderboard();
+    this.summitLeaderboard = this.loadSummitLeaderboard();
 
     // Firebase and nickname
     this.nicknameManager = new NicknameManager();
@@ -207,7 +224,9 @@ export class Game {
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
       if (e.code === 'Space') handleStart(e);
       if (e.code === 'Escape') {
-        if (this.state === 'dead' || this.state === 'finished') {
+        if (this.state === 'playing' && this.gameMode === 'backcountry') {
+          this.openLobby();
+        } else if (this.state === 'dead' || this.state === 'finished') {
           this.openLobby();
         } else if (this.state === 'lobby') {
           this.closeLobby();
@@ -558,8 +577,10 @@ export class Game {
       });
     });
 
-    // Drop In button
+    // Drop In button — always park mode
     this.ui.lobbyDropIn.addEventListener('click', () => {
+      this.gameMode = 'park';
+      this.backcountryChair = null;
       this.closeLobby();
     });
 
@@ -611,6 +632,29 @@ export class Game {
           t.classList.toggle('active', t.dataset.shopTab === this.activeShopTab)
         );
         this.renderShopItems(this.activeShopTab);
+      });
+    });
+
+    // Map button → open map panel
+    this.ui.lobbyMap.addEventListener('click', () => {
+      this.ui.mapPanel.classList.add('active');
+    });
+    this.ui.mapPanel.addEventListener('click', (e) => e.stopPropagation());
+    this.ui.mapBack.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.ui.mapPanel.classList.remove('active');
+    });
+
+    // Chair clicks on the map → launch backcountry mode
+    document.querySelectorAll('.map-chair[data-chair]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const chairId = el.dataset.chair;
+        if (chairId === 'park') return; // park uses DROP IN
+        this.gameMode = 'backcountry';
+        this.backcountryChair = chairId;
+        this.ui.mapPanel.classList.remove('active');
+        this.closeLobby();
       });
     });
 
@@ -702,8 +746,15 @@ export class Game {
 
   openLobby() {
     this.state = 'lobby';
+    // Reset to park mode when returning to lobby
+    if (this.gameMode === 'backcountry') {
+      this.gameMode = 'park';
+      this.backcountryChair = null;
+      this.swapTerrain();
+    }
     if (this.touchControls) this.touchControls.hide();
     this.hideSkiPatrol();
+    this.hideDave();
     this.ui.deathScreen.classList.remove('active');
     this.ui.finishScreen.classList.remove('active');
     this.ui.newRecordLabel.classList.remove('show');
@@ -711,6 +762,7 @@ export class Game {
     this.ui.customizePanel.classList.remove('active');
     this.ui.questsPanel.classList.remove('active');
     this.ui.ridepassPanel.classList.remove('active');
+    this.ui.mapPanel.classList.remove('active');
     this.ui.shopPanel.classList.remove('active');
     this.ui.accountPanel.classList.remove('active');
     this.ui.lobbyScreen.classList.add('active');
@@ -724,7 +776,27 @@ export class Game {
     this.teardownLobbyScene();
     this.ui.lobbyScreen.classList.remove('active');
     this.applyEquippedItems();
+    this.swapTerrain();
+    this.player.backcountryMode = this.gameMode === 'backcountry';
+    // Reload per-chair leaderboard now that backcountryChair is set
+    if (this.gameMode === 'backcountry') {
+      this.summitLeaderboard = this.loadSummitLeaderboard();
+    }
     this.fullReset();
+  }
+
+  swapTerrain() {
+    // Always dispose old terrain first
+    if (this.terrain && this.terrain.dispose) {
+      this.terrain.dispose();
+    }
+
+    if (this.gameMode === 'backcountry') {
+      this.terrain = new BackcountryTerrain(this.scene, this.backcountryChair);
+    } else {
+      this.terrain = new Terrain(this.scene);
+      this.parkTerrain = this.terrain;
+    }
   }
 
   initCarveTrail() {
@@ -897,6 +969,205 @@ export class Game {
     }
   }
 
+  // ---- DAVE NPC — RIVER RESCUE GUIDE ----
+
+  initDave() {
+    const blueJacket = new THREE.MeshStandardMaterial({ color: 0x2255cc, roughness: 0.8 });
+    const tanPants = new THREE.MeshStandardMaterial({ color: 0xc4a76c, roughness: 0.9 });
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xf5c6a0 });
+    const beanieMat = new THREE.MeshStandardMaterial({ color: 0x993333, roughness: 0.7 });
+    const beardMat = new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 1.0 });
+
+    const group = new THREE.Group();
+
+    // Legs
+    const legL = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.4, 4, 6), tanPants);
+    legL.position.set(-0.1, 0.28, 0); legL.castShadow = true; group.add(legL);
+    const legR = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.4, 4, 6), tanPants);
+    legR.position.set(0.1, 0.28, 0); legR.castShadow = true; group.add(legR);
+
+    // Torso — blue jacket
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.25), blueJacket);
+    torso.position.set(0, 0.75, 0); torso.castShadow = true; group.add(torso);
+
+    // Arms
+    const armL = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.35, 4, 6), blueJacket);
+    armL.position.set(-0.27, 0.72, 0); armL.castShadow = true; group.add(armL);
+    const armR = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.35, 4, 6), blueJacket);
+    armR.position.set(0.27, 0.72, 0); armR.castShadow = true; group.add(armR);
+
+    // Head
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), skinMat);
+    head.position.set(0, 1.12, 0); head.castShadow = true; group.add(head);
+
+    // Beanie
+    const beanie = new THREE.Mesh(
+      new THREE.SphereGeometry(0.17, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.55),
+      beanieMat);
+    beanie.position.set(0, 1.16, 0); group.add(beanie);
+
+    // Beard
+    const beard = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, 6, 4, 0, Math.PI * 2, Math.PI * 0.4, Math.PI * 0.4),
+      beardMat);
+    beard.position.set(0, 1.04, 0.06); group.add(beard);
+
+    group.visible = false;
+    this.scene.add(group);
+    this.dave = { group, legL, legR, armL, armR };
+  }
+
+  spawnDave(riverZone) {
+    if (!this.dave) return;
+    const wp = riverZone.escapePath;
+    if (!wp || wp.length === 0) return;
+
+    this.daveState = 'appearing';
+    this.daveTimer = 0;
+    this.daveWaypoints = wp;
+    this.daveWaypointIndex = 0;
+
+    // Position Dave close to the player (offset ~5 units toward first waypoint)
+    const px = this.player.position.x;
+    const pz = this.player.position.z;
+    const dirX = wp[0].x - px;
+    const dirZ = wp[0].z - pz;
+    const dirLen = Math.sqrt(dirX * dirX + dirZ * dirZ) || 1;
+    const startX = px + (dirX / dirLen) * 5;
+    const startZ = pz + (dirZ / dirLen) * 5;
+    const startY = this.terrain.getHeightAt(startX, startZ);
+    this.dave.group.position.set(startX, startY, startZ);
+    this.dave.group.visible = true;
+
+    // Face toward player
+    const dx = px - startX;
+    const dz = pz - startZ;
+    this.dave.group.rotation.y = Math.atan2(dx, dz);
+  }
+
+  updateDave(dt) {
+    if (this.daveState === 'hidden' || !this.dave) return;
+
+    this.daveTimer += dt;
+    const d = this.dave;
+
+    if (this.daveState === 'appearing') {
+      // Dave beckons with a waving arm for 2 seconds
+      const wave = Math.sin(this.daveTimer * 8) * 0.6;
+      d.armR.rotation.x = -1.2 + wave;
+      d.armR.rotation.z = -0.5;
+      d.armL.rotation.x = 0;
+
+      if (this.daveTimer >= 2.0) {
+        // Tell player to start following
+        this.player.daveRescuing = true;
+        this.daveState = 'leading';
+        this.daveTimer = 0;
+        this.daveWaypointIndex = 0;
+      }
+    } else if (this.daveState === 'leading') {
+      // Dave walks along escape path waypoints, staying close to player
+      if (this.daveWaypointIndex >= this.daveWaypoints.length) {
+        this.daveState = 'waving';
+        this.daveTimer = 0;
+        return;
+      }
+
+      const wp = this.daveWaypoints[this.daveWaypointIndex];
+      const dx = wp.x - d.group.position.x;
+      const dz = wp.z - d.group.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist < 2) {
+        this.daveWaypointIndex++;
+        if (this.daveWaypointIndex >= this.daveWaypoints.length) {
+          this.daveState = 'waving';
+          this.daveTimer = 0;
+          return;
+        }
+      }
+
+      // Only move when player is close — keeps Dave on screen
+      const pDx = d.group.position.x - this.player.position.x;
+      const pDz = d.group.position.z - this.player.position.z;
+      const playerDist = Math.sqrt(pDx * pDx + pDz * pDz);
+      const maxLead = 8; // never get more than 8 units ahead of player
+
+      if (playerDist < maxLead && dist > 0.1) {
+        const speed = 9;
+        d.group.position.x += (dx / dist) * speed * dt;
+        d.group.position.z += (dz / dist) * speed * dt;
+      }
+      d.group.rotation.y = Math.atan2(dx, dz);
+      const groundY = this.terrain.getHeightAt(d.group.position.x, d.group.position.z);
+      d.group.position.y = groundY;
+
+      // Run animation (idle when waiting for player)
+      if (playerDist < maxLead) {
+        const runCycle = this.daveTimer * 12;
+        d.legL.rotation.x = Math.sin(runCycle) * 0.6;
+        d.legR.rotation.x = Math.sin(runCycle + Math.PI) * 0.6;
+        d.armL.rotation.x = Math.sin(runCycle + Math.PI) * 0.5;
+        d.armL.rotation.z = 0;
+        d.armR.rotation.x = Math.sin(runCycle) * 0.5;
+        d.armR.rotation.z = 0;
+      } else {
+        // Waiting — beckon the player
+        const wave = Math.sin(this.daveTimer * 6) * 0.4;
+        d.armR.rotation.x = -1.2 + wave;
+        d.armR.rotation.z = -0.3;
+        d.legL.rotation.x = 0;
+        d.legR.rotation.x = 0;
+        d.armL.rotation.x = 0;
+        d.armL.rotation.z = 0;
+        // Face player while waiting
+        d.group.rotation.y = Math.atan2(-pDx, -pDz);
+      }
+    } else if (this.daveState === 'waving') {
+      // Dave waves goodbye for 2.5 seconds
+      const wave = Math.sin(this.daveTimer * 6) * 0.4;
+      d.armR.rotation.x = -1.5 + wave;
+      d.armR.rotation.z = -0.3;
+      d.armL.rotation.x = 0;
+      d.armL.rotation.z = 0;
+
+      // Face player
+      const dx = this.player.position.x - d.group.position.x;
+      const dz = this.player.position.z - d.group.position.z;
+      d.group.rotation.y = Math.atan2(dx, dz);
+
+      if (this.daveTimer >= 2.5) {
+        this.daveState = 'departing';
+        this.daveTimer = 0;
+      }
+    } else if (this.daveState === 'departing') {
+      // Dave skis away uphill for 2 seconds then hides
+      d.group.position.z += 10 * dt; // move uphill (+Z)
+      const groundY = this.terrain.getHeightAt(d.group.position.x, d.group.position.z);
+      d.group.position.y = groundY;
+      d.group.rotation.y = 0; // face uphill
+
+      const runCycle = this.daveTimer * 10;
+      d.legL.rotation.x = Math.sin(runCycle) * 0.4;
+      d.legR.rotation.x = Math.sin(runCycle + Math.PI) * 0.4;
+
+      if (this.daveTimer >= 2.0) {
+        this.hideDave();
+      }
+    }
+  }
+
+  hideDave() {
+    if (!this.dave) return;
+    this.daveState = 'hidden';
+    this.daveTimer = 0;
+    this.dave.group.visible = false;
+    this.dave.legL.rotation.set(0, 0, 0);
+    this.dave.legR.rotation.set(0, 0, 0);
+    this.dave.armL.rotation.set(0, 0, 0);
+    this.dave.armR.rotation.set(0, 0, 0);
+  }
+
   _createTrailMesh(maxSegs, material) {
     const positions = new Float32Array(maxSegs * 2 * 3);
     const geometry = new THREE.BufferGeometry();
@@ -1032,7 +1303,17 @@ export class Game {
       // Checkpoints
       this.updateCheckpoints();
 
-      // Crash
+      // Tomahawk — snow burst on start, no death
+      if (playerState.tomahawking) {
+        if (!this._tomahawkStarted) {
+          this._tomahawkStarted = true;
+          this.particles.emit(this.player.position, { x: 0, y: 5, z: 0 }, 60);
+        }
+      } else {
+        this._tomahawkStarted = false;
+      }
+
+      // Crash (old system — still used for obstacle collisions)
       if (playerState.crashed) {
         this.deathTimer += dt;
         this.ui.crashVignette.style.opacity = Math.min(this.deathTimer * 2, 1).toString();
@@ -1055,6 +1336,14 @@ export class Game {
         this.ui.crashVignette.style.opacity = '0';
         this.crashPhraseSet = false;
       }
+
+      // Dave NPC — river rescue (Peak backcountry)
+      if (playerState.inRiver && !playerState.daveRescuing && this.daveState === 'hidden') {
+        if (this.player.riverZone) {
+          this.spawnDave(this.player.riverZone);
+        }
+      }
+      this.updateDave(dt);
 
       // Camera
       this.updateCamera(dt, playerState);
@@ -1106,8 +1395,14 @@ export class Game {
     this.camera.updateProjectionMatrix();
 
     const mobile = isTouchDevice;
+    const bc = this.gameMode === 'backcountry';
     const speedZoom = Math.min(speed * 0.04, mobile ? 0.8 : 3);
     const offset = this.cameraOffset.clone();
+    // Backcountry: pull camera higher and further back to see the wide bowl
+    if (bc && !mobile) {
+      offset.y += 4;
+      offset.z += 4;
+    }
     if (!mobile) offset.y += speedZoom;
     offset.z += speedZoom * (mobile ? 0.5 : 1.5);
 
@@ -1169,12 +1464,14 @@ export class Game {
       this.lastCheckpointPos.clone().add(this.cameraOffset)
     );
     this.hideSkiPatrol();
+    this.hideDave();
   }
 
   showFinishScreen() {
     this.state = 'finished';
     if (this.touchControls) this.touchControls.hide();
     const finalScore = this.tricks.totalScore;
+    const isSummit = this.gameMode === 'backcountry';
 
     // Pick a finish catchphrase based on score
     let phrase;
@@ -1187,8 +1484,13 @@ export class Game {
     // Track quest: run complete
     this.quests.onRunComplete(finalScore);
 
-    // Save to personal leaderboard and check if new record
-    const isNewRecord = this.addToLeaderboard(finalScore);
+    // Save to appropriate personal leaderboard
+    const isNewRecord = isSummit
+      ? this.addToSummitLeaderboard(finalScore)
+      : this.addToLeaderboard(finalScore);
+
+    // Title: "SUMMIT LEADERBOARD" for backcountry, "RUN COMPLETE" for park
+    this.ui.finishTitle.textContent = isSummit ? 'SUMMIT LEADERBOARD' : 'RUN COMPLETE';
 
     this.ui.finishScreen.classList.add('active');
     this.ui.finishScore.textContent = finalScore.toLocaleString();
@@ -1204,19 +1506,21 @@ export class Game {
     const nick = this.nicknameManager.getNickname();
     this.ui.lbPlayerName.textContent = nick ? `RIDER: ${nick}` : '';
 
-    // Update week indicator
-    const weekId = getWeekId();
-    const parts = weekId.split('-W');
-    this.ui.weekIndicator.textContent = `WEEK ${parseInt(parts[1])} OF ${parts[0]}`;
-
-    // Render personal leaderboard tab
-    this.renderLeaderboard(finalScore);
-
-    // Default to worldwide tab
-    this.switchLeaderboardTab('worldwide');
-
-    // Submit to Firebase and fetch worldwide scores (async, non-blocking)
-    this.submitAndFetchWorldwide(finalScore);
+    if (isSummit) {
+      // Summit: all-time, no week indicator
+      this.ui.weekIndicator.textContent = 'ALL TIME';
+      this.renderSummitLeaderboard(finalScore);
+      this.switchLeaderboardTab('worldwide');
+      this.submitAndFetchSummitWorldwide(finalScore);
+    } else {
+      // Park: weekly leaderboard
+      const weekId = getWeekId();
+      const parts = weekId.split('-W');
+      this.ui.weekIndicator.textContent = `WEEK ${parseInt(parts[1])} OF ${parts[0]}`;
+      this.renderLeaderboard(finalScore);
+      this.switchLeaderboardTab('worldwide');
+      this.submitAndFetchWorldwide(finalScore);
+    }
   }
 
   async submitAndFetchWorldwide(finalScore) {
@@ -1359,6 +1663,7 @@ export class Game {
     this.currentCameraPos.copy(startPos.clone().add(this.cameraOffset));
 
     this.hideSkiPatrol();
+    this.hideDave();
 
     // Reset trail
     this._resetTrail(this.trail1);
@@ -2067,6 +2372,106 @@ export class Game {
     this.cloudSaveAll();
   }
 
+  // ---- SUMMIT LEADERBOARD (backcountry, all-time) ----
+
+  loadSummitLeaderboard() {
+    const chair = this.backcountryChair || 'summit';
+    try {
+      const data = localStorage.getItem(`shred-summit-summit-leaderboard-${chair}`);
+      if (data) return JSON.parse(data);
+    } catch (e) { /* ignore */ }
+    return [];
+  }
+
+  saveSummitLeaderboard() {
+    const chair = this.backcountryChair || 'summit';
+    try {
+      localStorage.setItem(`shred-summit-summit-leaderboard-${chair}`, JSON.stringify(this.summitLeaderboard));
+    } catch (e) { /* ignore */ }
+  }
+
+  addToSummitLeaderboard(score) {
+    const entry = { score, date: Date.now() };
+    this.summitLeaderboard.push(entry);
+    this.summitLeaderboard.sort((a, b) => b.score - a.score);
+    if (this.summitLeaderboard.length > 10) this.summitLeaderboard.length = 10;
+    this.saveSummitLeaderboard();
+    return this.summitLeaderboard[0].score === score && this.summitLeaderboard[0].date === entry.date;
+  }
+
+  renderSummitLeaderboard(currentScore) {
+    const container = this.ui.leaderboardEntries;
+    container.innerHTML = '';
+    const entries = this.summitLeaderboard.slice(0, 5);
+    let currentMarked = false;
+
+    entries.forEach((entry, i) => {
+      const div = document.createElement('div');
+      div.className = 'leaderboard-entry';
+      if (!currentMarked && entry.score === currentScore) {
+        div.classList.add('current');
+        currentMarked = true;
+      }
+      const rankSpan = document.createElement('span');
+      rankSpan.className = 'lb-rank';
+      if (i === 0) rankSpan.classList.add('gold');
+      else if (i === 1) rankSpan.classList.add('silver');
+      else if (i === 2) rankSpan.classList.add('bronze');
+      rankSpan.textContent = `#${i + 1}`;
+      const scoreSpan = document.createElement('span');
+      scoreSpan.className = 'lb-score';
+      scoreSpan.textContent = entry.score.toLocaleString();
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'lb-label';
+      labelSpan.textContent = 'PTS';
+      div.appendChild(rankSpan);
+      div.appendChild(scoreSpan);
+      div.appendChild(labelSpan);
+      container.appendChild(div);
+    });
+
+    if (entries.length === 0) {
+      container.textContent = 'No summit runs yet!';
+    }
+  }
+
+  async submitAndFetchSummitWorldwide(finalScore) {
+    const db = this.firebaseDb;
+    const nickname = this.nicknameManager.getNickname() || 'ANON';
+
+    this.ui.worldwideLoading.style.display = 'block';
+    this.ui.worldwideError.style.display = 'none';
+    this.ui.worldwideEntries.innerHTML = '';
+
+    try {
+      const title = this.ridePass.getSelectedTitle();
+      await submitSummitScore(db, nickname, finalScore, this.backcountryChair, title);
+      const scores = await fetchSummitScores(db, this.backcountryChair, 20);
+
+      this.ui.worldwideLoading.style.display = 'none';
+
+      if (scores === null) {
+        this.ui.worldwideError.style.display = 'block';
+        this.ui.worldwideError.textContent = 'OFFLINE — CHECK CONNECTION';
+        return;
+      }
+
+      if (scores.length === 0) {
+        this.ui.worldwideError.style.display = 'block';
+        this.ui.worldwideError.textContent = 'NO SUMMIT SCORES YET — BE THE FIRST!';
+        return;
+      }
+
+      this.worldwideScores = scores;
+      this.renderWorldwideLeaderboard(finalScore, nickname);
+    } catch (e) {
+      console.warn('Summit leaderboard error:', e);
+      this.ui.worldwideLoading.style.display = 'none';
+      this.ui.worldwideError.style.display = 'block';
+      this.ui.worldwideError.textContent = 'OFFLINE — CHECK CONNECTION';
+    }
+  }
+
   addToLeaderboard(score) {
     const entry = { score, date: Date.now() };
     this.leaderboard.push(entry);
@@ -2195,7 +2600,8 @@ export class Game {
     this.ui.altitude.textContent = `ALT ${alt}m`;
 
     // Checkpoint
-    this.ui.checkpoint.textContent = `CHECKPOINT ${this.currentCheckpoint} / 8`;
+    const totalCheckpoints = this.terrain.checkpointCount || this.terrain.config?.checkpointCount || 8;
+    this.ui.checkpoint.textContent = `CHECKPOINT ${this.currentCheckpoint} / ${totalCheckpoints}`;
 
     // Checkpoint alert
     const timeSinceCP = performance.now() - this.checkpointAlertTime;

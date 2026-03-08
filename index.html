@@ -264,6 +264,7 @@
     }
     #lobby-shop { top: 30px; left: 30px; }
     #lobby-ridepass { top: 30px; right: 30px; }
+    #lobby-map { top: 30px; right: 200px; }
     #lobby-quests { bottom: 80px; left: 30px; }
     #lobby-customize { bottom: 80px; right: 30px; }
     #lobby-account { bottom: 24px; left: 50%; transform: translateX(-50%); }
@@ -440,6 +441,146 @@
       transition: all 0.15s;
     }
     #quests-back:hover { background: rgba(255,255,255,0.18); border-color: #fff; color: #fff; }
+
+    /* Map panel */
+    #map-panel {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(10,18,30,0.97);
+      z-index: 3;
+      padding-top: 40px;
+      overflow-y: auto;
+    }
+    #map-panel.active { display: flex; }
+    #map-panel h2 {
+      font-size: 48px;
+      font-family: 'Bebas Neue', sans-serif;
+      color: #fff;
+      letter-spacing: 6px;
+      margin-bottom: 20px;
+    }
+    .map-container {
+      position: relative;
+      width: 90%;
+      max-width: 700px;
+      aspect-ratio: 4 / 5;
+      background: linear-gradient(180deg, #1a3a5c 0%, #2d5a3a 30%, #e8f0e8 85%, #fff 100%);
+      border-radius: 16px;
+      border: 2px solid rgba(255,255,255,0.15);
+      overflow: hidden;
+    }
+    /* Mountain silhouette */
+    .map-mountain {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 100%;
+    }
+    .map-mountain svg { width: 100%; height: 100%; }
+    /* Chair lift lines */
+    .map-chair {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+    .map-chair:hover {
+      transform: scale(1.1);
+    }
+    .map-chair[data-chair="park"] {
+      cursor: default;
+      opacity: 0.5;
+    }
+    .map-chair[data-chair="park"]:hover {
+      transform: none;
+    }
+    .map-chair-line {
+      width: 3px;
+      background: rgba(0,0,0,0.5);
+      border-radius: 2px;
+    }
+    .map-chair-label {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 15px;
+      letter-spacing: 2px;
+      color: #fff;
+      background: rgba(0,0,0,0.65);
+      padding: 4px 12px;
+      border-radius: 6px;
+      white-space: nowrap;
+      margin-top: 4px;
+      text-align: center;
+    }
+    .map-chair-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      margin-bottom: 4px;
+    }
+    .map-chair-dot.green { background: #4caf50; }
+    .map-chair-dot.blue { background: #2196f3; }
+    .map-chair-dot.black { background: #333; }
+    .map-chair-dot.red { background: #e53935; }
+    /* Trail difficulty labels */
+    .map-trail-tag {
+      font-family: 'Inter', sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.7);
+      letter-spacing: 1px;
+      text-align: center;
+    }
+    /* Base lodge */
+    .map-lodge {
+      position: absolute;
+      bottom: 6%;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 14px;
+      letter-spacing: 2px;
+      color: #fff;
+      background: rgba(139,69,19,0.7);
+      padding: 4px 14px;
+      border-radius: 6px;
+    }
+    /* Summit marker */
+    .map-summit-marker {
+      position: absolute;
+      top: 5%;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 13px;
+      letter-spacing: 2px;
+      color: #ffcc00;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+      white-space: nowrap;
+    }
+    #map-back {
+      margin-top: 20px;
+      margin-bottom: 30px;
+      padding: 10px 36px;
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 20px;
+      letter-spacing: 3px;
+      color: rgba(255,255,255,0.7);
+      background: rgba(255,255,255,0.08);
+      border: 2px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+    #map-back:hover {
+      background: rgba(255,255,255,0.18);
+      color: #fff;
+    }
 
     /* Ride Pass panel */
     #ridepass-panel {
@@ -1791,6 +1932,9 @@
       .shop-tokens-bar { gap: 8px; }
       .shop-token { font-size: 14px; padding: 3px 8px; }
       .shop-tab { padding: 6px 12px; font-size: 13px; }
+      /* Map mobile */
+      #map-panel h2 { font-size: 36px; }
+      #lobby-map { top: 30px; right: 150px; font-size: 18px; padding: 8px 16px; }
       /* Ride pass mobile */
       #ridepass-panel h2 { font-size: 36px; }
       .rp-level-list { max-height: 35vh; }
@@ -1905,7 +2049,7 @@
   </div>
 
   <div id="finish-screen">
-    <h1>RUN COMPLETE</h1>
+    <h1 id="finish-title">RUN COMPLETE</h1>
     <div class="finish-subtitle" id="finish-catchphrase">LEGENDARY RUN!</div>
     <div class="final-score-big">SCORE: <span id="finish-score">0</span></div>
     <div class="new-record" id="new-record-label">NEW HIGH SCORE!</div>
@@ -1934,6 +2078,7 @@
   <div id="lobby-screen">
     <!-- Corner buttons -->
     <div class="lobby-corner-btn" id="lobby-shop">SHOP</div>
+    <div class="lobby-corner-btn" id="lobby-map">MAP</div>
     <div class="lobby-corner-btn" id="lobby-ridepass">RIDE PASS</div>
     <div class="lobby-corner-btn" id="lobby-quests">QUESTS</div>
     <div class="lobby-corner-btn" id="lobby-customize">CUSTOMIZE</div>
@@ -1961,6 +2106,61 @@
       </div>
       <div id="shop-item-list"></div>
       <button id="shop-back">BACK</button>
+    </div>
+
+    <!-- Map panel (hidden until MAP clicked) -->
+    <div id="map-panel">
+      <h2>TRAIL MAP</h2>
+      <div class="map-container">
+        <!-- Mountain shape -->
+        <svg class="map-mountain" viewBox="0 0 700 875" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Sky gradient already from container bg -->
+          <!-- Mountain body -->
+          <polygon points="350,30 80,600 0,875 700,875 620,600" fill="#4a6741" opacity="0.5"/>
+          <polygon points="350,30 150,500 50,875 650,875 550,500" fill="#5a7a52" opacity="0.4"/>
+          <!-- Snow cap -->
+          <polygon points="350,30 280,180 310,160 350,200 390,160 420,180" fill="rgba(255,255,255,0.6)"/>
+          <!-- Tree line texture -->
+          <rect x="60" y="550" width="580" height="325" fill="#2d5a3a" opacity="0.3" rx="8"/>
+        </svg>
+
+        <div class="map-summit-marker">&#9650; SHRED SUMMIT — 3,200m</div>
+
+        <!-- Peak Chair (top, hardest) -->
+        <div class="map-chair" data-chair="peak" style="left: 50%; top: 8%; transform: translateX(-50%);">
+          <div class="map-chair-dot red"></div>
+          <div class="map-chair-line" style="height: 120px;"></div>
+          <div class="map-chair-label">PEAK CHAIR</div>
+          <div class="map-trail-tag">EXPERT ONLY</div>
+        </div>
+
+        <!-- Summit Chair (upper-left) -->
+        <div class="map-chair" data-chair="summit" style="left: 22%; top: 25%;">
+          <div class="map-chair-dot black"></div>
+          <div class="map-chair-line" style="height: 140px;"></div>
+          <div class="map-chair-label">SUMMIT CHAIR</div>
+          <div class="map-trail-tag">ADVANCED</div>
+        </div>
+
+        <!-- Biggie Chair (upper-right) -->
+        <div class="map-chair" data-chair="biggie" style="left: 68%; top: 28%;">
+          <div class="map-chair-dot blue"></div>
+          <div class="map-chair-line" style="height: 130px;"></div>
+          <div class="map-chair-label">BIGGIE CHAIR</div>
+          <div class="map-trail-tag">INTERMEDIATE</div>
+        </div>
+
+        <!-- Park Chair (lower-center, beginner-friendly) -->
+        <div class="map-chair" data-chair="park" style="left: 40%; top: 55%;">
+          <div class="map-chair-dot green"></div>
+          <div class="map-chair-line" style="height: 110px;"></div>
+          <div class="map-chair-label">PARK CHAIR</div>
+          <div class="map-trail-tag">ALL LEVELS · DROP IN</div>
+        </div>
+
+        <div class="map-lodge">BASE LODGE</div>
+      </div>
+      <button id="map-back">BACK</button>
     </div>
 
     <!-- Ride Pass panel (hidden until RIDE PASS clicked) -->

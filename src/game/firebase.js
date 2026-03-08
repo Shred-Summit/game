@@ -167,3 +167,42 @@ export async function fetchWorldwideScores(dbRef, maxResults = 20) {
     return null;
   }
 }
+
+export async function submitSummitScore(dbRef, nickname, score, chair, title = null) {
+  if (!dbRef) return null;
+  try {
+    const d = {
+      nickname: nickname,
+      score: score,
+      chair: chair,
+      createdAt: serverTimestamp(),
+    };
+    if (title) d.title = title;
+    const docRef = await addDoc(collection(dbRef, 'summit_scores'), d);
+    return docRef.id;
+  } catch (e) {
+    console.warn('Failed to submit summit score to Firebase:', e);
+    return null;
+  }
+}
+
+export async function fetchSummitScores(dbRef, chair, maxResults = 20) {
+  if (!dbRef) return null;
+  try {
+    const q = query(
+      collection(dbRef, 'summit_scores'),
+      where('chair', '==', chair),
+      limit(500),
+    );
+    const snapshot = await getDocs(q);
+    const scores = snapshot.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+    }));
+    scores.sort((a, b) => b.score - a.score);
+    return scores.slice(0, maxResults);
+  } catch (e) {
+    console.warn('Failed to fetch summit scores:', e);
+    return null;
+  }
+}
