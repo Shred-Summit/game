@@ -1,8 +1,20 @@
 import * as THREE from 'three';
 
+// Deterministic pseudo-random number generator (mulberry32)
+function mulberry32(seed) {
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
 export class Terrain {
-  constructor(scene) {
+  constructor(scene, seed = null) {
     this.scene = scene;
+    // Seeded RNG for deterministic terrain in multiplayer
+    this.rng = seed != null ? mulberry32(seed) : null;
     this.chunks = [];
     this.chunkLength = 300;
     this.chunkWidth = 120;
@@ -60,6 +72,11 @@ export class Terrain {
     for (let i = 0; i < 5; i++) {
       this.generateChunk();
     }
+  }
+
+  // Deterministic random when seeded, otherwise Math.random
+  rand() {
+    return this.rng ? this.rng() : this.rand();
   }
 
   generateChunk() {
@@ -262,21 +279,21 @@ export class Terrain {
       return false;
     };
 
-    const railCount = 3 + Math.floor(Math.random() * 3); // 3-5 rails
+    const railCount = 3 + Math.floor(this.rand() * 3); // 3-5 rails
     for (let i = 0; i < railCount; i++) {
       const x = zoneLevel === 2
-        ? (Math.random() - 0.5) * 45
-        : (Math.random() - 0.5) * 35;
-      const z = -20 - Math.random() * (this.chunkLength - 40);
+        ? (this.rand() - 0.5) * 45
+        : (this.rand() - 0.5) * 35;
+      const z = -20 - this.rand() * (this.chunkLength - 40);
 
       // Rail dimensions by zone
       let railLength, railHeight, lipHeight;
       if (zoneLevel === 2) {
-        railLength = 35 + Math.random() * 10; // 35-45 units
+        railLength = 35 + this.rand() * 10; // 35-45 units
         railHeight = 1.5;
         lipHeight = 1.2; // tall lips for 450s
       } else {
-        railLength = 30 + Math.random() * 10; // 30-40 units
+        railLength = 30 + this.rand() * 10; // 30-40 units
         railHeight = 1.2;
         lipHeight = 0.8; // smaller lips for 270s
       }
@@ -320,14 +337,14 @@ export class Terrain {
 
     // --- Phase 3: Trees and rocks (placed AFTER features to avoid exclusion zones) ---
 
-    const treeCount = 25 + Math.floor(Math.random() * 15);
+    const treeCount = 25 + Math.floor(this.rand() * 15);
     for (let i = 0; i < treeCount; i++) {
-      const side = Math.random() > 0.5 ? 1 : -1;
-      const edgeBias = Math.random() < 0.7;
+      const side = this.rand() > 0.5 ? 1 : -1;
+      const edgeBias = this.rand() < 0.7;
       const x = edgeBias
-        ? side * (28 + Math.random() * 25)
-        : (Math.random() - 0.5) * 50;
-      const z = (Math.random() - 0.5) * this.chunkLength;
+        ? side * (28 + this.rand() * 25)
+        : (this.rand() - 0.5) * 50;
+      const z = (this.rand() - 0.5) * this.chunkLength;
       const globalZ = zOffset + z;
       const y = this.computeHeight(x, globalZ);
       if (Math.abs(x) < 8) continue;
@@ -343,10 +360,10 @@ export class Terrain {
       });
     }
 
-    const rockCount = 3 + Math.floor(Math.random() * 4);
+    const rockCount = 3 + Math.floor(this.rand() * 4);
     for (let i = 0; i < rockCount; i++) {
-      const x = (Math.random() - 0.5) * 50;
-      const z = (Math.random() - 0.5) * this.chunkLength;
+      const x = (this.rand() - 0.5) * 50;
+      const z = (this.rand() - 0.5) * this.chunkLength;
       const globalZ = zOffset + z;
       const y = this.computeHeight(x, globalZ);
       if (Math.abs(x) < 6) continue;
@@ -956,8 +973,8 @@ export class Terrain {
 
   createPineTree() {
     const group = new THREE.Group();
-    const scale = 0.7 + Math.random() * 0.8;
-    const mat = Math.random() > 0.5 ? this.treeMaterial : this.darkTreeMaterial;
+    const scale = 0.7 + this.rand() * 0.8;
+    const mat = this.rand() > 0.5 ? this.treeMaterial : this.darkTreeMaterial;
 
     const trunk = new THREE.Mesh(
       new THREE.CylinderGeometry(0.15 * scale, 0.25 * scale, 2.5 * scale, 5),
@@ -974,7 +991,7 @@ export class Terrain {
         new THREE.ConeGeometry(radius, height, 6), mat
       );
       cone.position.y = (2.5 + i * 1.3) * scale;
-      cone.rotation.y = Math.random() * Math.PI;
+      cone.rotation.y = this.rand() * Math.PI;
       cone.castShadow = true;
       group.add(cone);
     }
@@ -993,18 +1010,18 @@ export class Terrain {
 
   createRock() {
     const group = new THREE.Group();
-    const count = 1 + Math.floor(Math.random() * 3);
+    const count = 1 + Math.floor(this.rand() * 3);
     for (let i = 0; i < count; i++) {
-      const geo = new THREE.DodecahedronGeometry(1.0 + Math.random() * 1.5, 1);
+      const geo = new THREE.DodecahedronGeometry(1.0 + this.rand() * 1.5, 1);
       const pos = geo.attributes.position;
       for (let j = 0; j < pos.count; j++) {
-        pos.setX(j, pos.getX(j) + (Math.random() - 0.5) * 0.4);
-        pos.setY(j, pos.getY(j) * 0.5 + (Math.random() - 0.5) * 0.2);
-        pos.setZ(j, pos.getZ(j) + (Math.random() - 0.5) * 0.4);
+        pos.setX(j, pos.getX(j) + (this.rand() - 0.5) * 0.4);
+        pos.setY(j, pos.getY(j) * 0.5 + (this.rand() - 0.5) * 0.2);
+        pos.setZ(j, pos.getZ(j) + (this.rand() - 0.5) * 0.4);
       }
       geo.computeVertexNormals();
       const mesh = new THREE.Mesh(geo, this.rockMaterial);
-      mesh.position.set((Math.random() - 0.5) * 2, 0, (Math.random() - 0.5) * 2);
+      mesh.position.set((this.rand() - 0.5) * 2, 0, (this.rand() - 0.5) * 2);
       mesh.castShadow = true;
       group.add(mesh);
     }

@@ -540,14 +540,10 @@ export class Player {
         }
       }
 
-      // Fall damage — backcountry: tomahawk, park: crash
+      // Fall damage — backcountry: no fall damage (survive big drops if landed clean)
       const effectiveVY = this.velocity.y * (1 - this.landingZoneSlopeAbsorb);
-      if (effectiveVY < -35) {
-        if (this.backcountryMode) {
-          this.triggerTomahawk(terrain);
-        } else {
-          this.triggerCrash();
-        }
+      if (effectiveVY < -35 && !this.backcountryMode) {
+        this.triggerCrash();
         return this.getState(terrain);
       }
 
@@ -1577,14 +1573,12 @@ export class Player {
     this.tomahawking = true;
     this.tomahawkTimer = 0;
     this.tomahawkRotation = 0;
-    this.grounded = true; // Mark as landed so TrickSystem scores the trick
+    this.grounded = true;
     this.onKicker = null;
     this.grinding = false;
     this.grindRail = null;
     this.isGrabbing = false;
     this.grabType = null;
-    // DON'T reset trickRotation — let TrickSystem score the trick first
-    // The tomahawk is purely visual, trick still counts
     // Keep forward momentum — slide downhill while tumbling
     const speed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
     this.velocity.set(0, 0, -Math.max(speed * 0.5, 8));
@@ -1593,7 +1587,7 @@ export class Player {
   updateTomahawk(dt, terrain) {
     this.tomahawkTimer += dt;
 
-    // Clear trick rotation after first frame (trick was already scored on landing frame)
+    // Clear trick rotation after first frame
     if (this.tomahawkTimer <= dt * 2) {
       this.trickRotation.set(0, 0, 0);
       this.isCorkingThisJump = false;
@@ -1618,19 +1612,15 @@ export class Player {
     this.velocity.x *= 0.98;
     this.velocity.z *= 0.98;
 
-    // After 3 rotations, recover
+    // After tumble animation finishes, trigger death (crash)
     if (progress >= 1.0) {
       this.tomahawking = false;
       this.tomahawkTimer = 0;
       this.tomahawkRotation = 0;
       this.group.rotation.x = 0;
-      this.grounded = true;
-      this.airTime = 0;
-      // Resume at a reasonable speed
-      const resumeSpeed = Math.max(Math.abs(this.velocity.z), 10);
-      this.velocity.set(0, 0, -resumeSpeed);
       this.position.y = groundY + 0.5;
       this.group.position.copy(this.position);
+      this.triggerCrash();
     }
   }
 

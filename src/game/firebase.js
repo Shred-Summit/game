@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, query, where, limit, getDocs, serverTimestamp, doc, setDoc, getDoc } from 'firebase/firestore';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, onAuthStateChanged, signOut } from 'firebase/auth';
+import { getDatabase, ref as rtdbRef, set as rtdbSet, get as rtdbGet, onValue, onDisconnect, remove as rtdbRemove, update as rtdbUpdate, serverTimestamp as rtdbTimestamp } from 'firebase/database';
 
 // ==========================================
 // FIREBASE SETUP — Replace this config with
@@ -15,10 +16,12 @@ const firebaseConfig = {
   messagingSenderId: '617043389770',
   appId: '1:617043389770:web:13dee92542cd7dcf21a5b3',
   measurementId: 'G-LRXJE5CLPV',
+  databaseURL: 'https://shred-summit-3079f-default-rtdb.firebaseio.com',
 };
 
 let db = null;
 let auth = null;
+let rtdb = null;
 
 export function isFirebaseConfigured() {
   return !!(firebaseConfig.apiKey && firebaseConfig.projectId);
@@ -33,6 +36,7 @@ export function initFirebase() {
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     auth = getAuth(app);
+    try { rtdb = getDatabase(app); } catch (e) { console.warn('RTDB init failed:', e); }
     return db;
   } catch (e) {
     console.warn('Firebase init failed:', e);
@@ -47,6 +51,13 @@ export function getFirebaseAuth() {
 export function getDb() {
   return db;
 }
+
+export function getRtdb() {
+  return rtdb;
+}
+
+// ---- RTDB helpers (re-exported for MultiplayerManager) ----
+export { rtdbRef, rtdbSet, rtdbGet, onValue, onDisconnect, rtdbRemove, rtdbUpdate, rtdbTimestamp };
 
 // ---- AUTH ----
 
