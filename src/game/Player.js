@@ -972,8 +972,8 @@ export class Player {
       const isCork = flipping && spinning;
       this.isCorkingThisJump = this.isCorkingThisJump || isCork;
       if (isCork && this.corkFlipDirection === 0) {
-        // W = visual backflip (+1), S = visual frontflip (-1)
-        this.corkFlipDirection = input.flipForward ? 1 : -1;
+        // W = frontflip (-1), S = backflip (+1)
+        this.corkFlipDirection = input.flipForward ? -1 : 1;
         this.corkSpinDirection = input.spinLeft ? 1 : -1;
       }
 
@@ -1020,11 +1020,23 @@ export class Player {
           }
         }
 
-        // --- SPIN (Q/E) — ramp up while held, hard stop on release ---
-        const spinDir = input.spinLeft ? 1 : input.spinRight ? -1 : 0;
-        this.angularVelocity.y = rampOrBrake(
-          this.angularVelocity.y, spinDir * spinTarget, spinning
-        );
+        // --- SPIN (Q/E) — ramp up while held, auto-snap on release ---
+        if (spinning) {
+          const spinDir = input.spinLeft ? 1 : -1;
+          this.angularVelocity.y = rampOrBrake(
+            this.angularVelocity.y, spinDir * spinTarget, true
+          );
+        } else {
+          // Auto-snap spin toward nearest clean 180°
+          const nearestCleanSpin = Math.round(this.trickRotation.y / Math.PI) * Math.PI;
+          const spinError = nearestCleanSpin - this.trickRotation.y;
+          if (Math.abs(spinError) > 0.05 && Math.abs(this.angularVelocity.y) < 3.0) {
+            const snapTarget = Math.sign(spinError) * Math.min(Math.abs(spinError) * 4, 5.0);
+            this.angularVelocity.y = rampOrBrake(this.angularVelocity.y, snapTarget, true);
+          } else {
+            this.angularVelocity.y = rampOrBrake(this.angularVelocity.y, 0, false);
+          }
+        }
 
         // Roll auto-snaps toward nearest clean 360° when not corking
         const nearestCleanRoll = Math.round(this.trickRotation.z / (Math.PI * 2)) * Math.PI * 2;

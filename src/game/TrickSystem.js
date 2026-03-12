@@ -142,7 +142,8 @@ export class TrickSystem {
       this.wasAirborne = true;
 
       const yRot = playerState.trickRotation.y;
-      this.spinCount = Math.floor(Math.abs(yRot) / Math.PI);
+      // Round to nearest 180° to avoid overshoot mis-counts
+      this.spinCount = Math.round(Math.abs(yRot) / Math.PI);
       this.rawSpinRadians = yRot;
 
       // Count flips by head inversions: each time the head passes under the body
