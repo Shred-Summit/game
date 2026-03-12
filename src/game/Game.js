@@ -298,8 +298,9 @@ export class Game {
       return;
     }
 
-    // Keep start screen visible as splash while Firebase resolves auth state
-    // (clicks won't work yet because state is still 'auth', not 'start')
+    // Hide start screen and show auth screen while Firebase resolves auth state
+    this.ui.startScreen.style.display = 'none';
+    this.ui.authScreen.classList.add('active');
     this.input.disabled = true; // Let keyboard input go to auth fields
 
     // Auth buttons
@@ -610,9 +611,11 @@ export class Game {
     });
 
     // Customize button → open customize panel
-    this.ui.lobbyCustomize.addEventListener('click', () => {
-      this.ui.customizePanel.classList.add('active');
-    });
+    if (this.ui.lobbyCustomize) {
+      this.ui.lobbyCustomize.addEventListener('click', () => {
+        this.ui.customizePanel.classList.add('active');
+      });
+    }
 
     // Back button → close customize panel
     this.ui.customizeBack.addEventListener('click', () => {
@@ -778,9 +781,16 @@ export class Game {
 
     // ---- PARTY SYSTEM ----
     this.ui.partyCreate.addEventListener('click', async () => {
-      this.ui.partyError.textContent = '';
-      const code = await this.multiplayer.createParty();
-      if (code) this.showPartyView(code);
+      this.ui.partyError.textContent = 'CREATING...';
+      try {
+        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('CONNECTION TIMED OUT')), 5000));
+        const code = await Promise.race([this.multiplayer.createParty(), timeout]);
+        if (code) { this.ui.partyError.textContent = ''; this.showPartyView(code); }
+        else this.ui.partyError.textContent = 'FAILED TO CREATE PARTY';
+      } catch (e) {
+        console.warn('Party create error:', e);
+        this.ui.partyError.textContent = e.message || 'CONNECTION FAILED';
+      }
     });
 
     this.ui.partyJoinBtn.addEventListener('click', async () => {
@@ -828,6 +838,10 @@ export class Game {
     this.ui.partyActiveView.style.display = '';
     this.ui.partyCode.textContent = code;
     this.ui.partyStart.style.display = this.multiplayer.isHost ? '' : 'none';
+    // Show big party code banner
+    const banner = document.getElementById('party-code-banner');
+    const bigCode = document.getElementById('party-code-big');
+    if (banner) { banner.style.display = ''; bigCode.textContent = code; }
   }
 
   hidePartyView() {
@@ -836,6 +850,9 @@ export class Game {
     this.ui.partyJoinInput.value = '';
     this.ui.partyError.textContent = '';
     this.ui.partyMembers.innerHTML = '';
+    // Hide big party code banner
+    const banner = document.getElementById('party-code-banner');
+    if (banner) banner.style.display = 'none';
   }
 
   updatePartyMembers(members, hostUid) {

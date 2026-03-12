@@ -76,7 +76,7 @@ export class Terrain {
 
   // Deterministic random when seeded, otherwise Math.random
   rand() {
-    return this.rng ? this.rng() : this.rand();
+    return this.rng ? this.rng() : Math.random();
   }
 
   generateChunk() {

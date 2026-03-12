@@ -243,10 +243,10 @@
     /* Corner buttons */
     .lobby-corner-btn {
       position: absolute;
-      padding: 12px 24px;
+      padding: 8px 16px;
       font-family: 'Bebas Neue', sans-serif;
-      font-size: 22px;
-      letter-spacing: 3px;
+      font-size: 15px;
+      letter-spacing: 2px;
       color: rgba(255,255,255,0.8);
       background: rgba(255,255,255,0.08);
       border: 2px solid rgba(255,255,255,0.25);
@@ -262,17 +262,32 @@
       color: #fff;
       transform: scale(1.05);
     }
-    #lobby-shop { top: 30px; left: 30px; }
-    #lobby-ridepass { top: 30px; right: 30px; }
-    #lobby-map { top: 30px; right: 200px; }
-    #lobby-quests { bottom: 80px; left: 30px; }
-    #lobby-customize { bottom: 80px; right: 30px; }
-    #lobby-account { bottom: 24px; left: 50%; transform: translateX(-50%); }
+    /* Stack all menu buttons on the right side */
+    .lobby-corner-btn {
+      position: static;
+      width: 100%;
+      text-align: center;
+    }
+    .lobby-btn-stack {
+      position: absolute;
+      top: 50%;
+      right: 30px;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 2;
+      pointer-events: auto;
+    }
 
     /* DROP IN stays centered */
     #lobby-drop-in {
-      padding: 14px 50px;
-      font-size: 20px;
+      position: absolute;
+      left: 50%;
+      bottom: 30%;
+      transform: translateX(-50%);
+      padding: 18px 60px;
+      font-size: 24px;
       font-family: 'Bebas Neue', sans-serif;
       letter-spacing: 4px;
       color: #fff;
@@ -285,20 +300,49 @@
       z-index: 2;
     }
     #lobby-drop-in:hover { background: rgba(255,255,255,0.2); border-color: #fff; }
+
+    /* Big party code banner */
+    #party-code-banner {
+      position: absolute;
+      top: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      z-index: 5;
+      pointer-events: none;
+    }
+    .party-code-label {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 14px;
+      letter-spacing: 3px;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 4px;
+    }
+    #party-code-big {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 52px;
+      letter-spacing: 10px;
+      color: #fff;
+      text-shadow: 0 2px 16px rgba(0,0,0,0.5);
+    }
     .lobby-hint {
-      margin-top: 16px;
+      position: absolute;
+      left: 50%;
+      bottom: calc(30% - 40px);
+      transform: translateX(-50%);
       color: rgba(255,255,255,0.3);
       font-size: 12px;
       letter-spacing: 2px;
       z-index: 2;
+      white-space: nowrap;
     }
 
     /* Party panel */
     #party-panel {
       position: absolute;
-      bottom: 140px;
-      left: 50%;
-      transform: translateX(-50%);
+      top: 30px;
+      left: 30px;
+      transform: none;
       background: rgba(0,0,0,0.5);
       border: 1px solid rgba(255,255,255,0.2);
       border-radius: 12px;
@@ -307,6 +351,7 @@
       z-index: 3;
       pointer-events: auto;
       min-width: 220px;
+      max-width: 260px;
     }
     #party-panel h3 {
       margin: 0 0 12px;
@@ -1450,19 +1495,19 @@
 
     /* Logout button in lobby */
     #lobby-logout {
-      position: absolute;
-      top: 80px;
-      right: 30px;
-      padding: 6px 14px;
-      font-size: 12px;
+      position: static;
+      width: 100%;
+      padding: 8px 16px;
+      font-size: 15px;
       font-family: 'Bebas Neue', sans-serif;
-      letter-spacing: 1.5px;
-      color: rgba(255,255,255,0.4);
-      background: rgba(0,0,0,0.2);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 4px;
+      letter-spacing: 2px;
+      color: rgba(255,255,255,0.8);
+      background: rgba(255,255,255,0.08);
+      border: 2px solid rgba(255,255,255,0.25);
+      border-radius: 10px;
       cursor: pointer;
       z-index: 10;
+      text-align: center;
     }
     #lobby-logout:hover { color: #fff; background: rgba(0,0,0,0.4); }
 
@@ -2064,7 +2109,7 @@
       .shop-tab { padding: 6px 12px; font-size: 13px; }
       /* Map mobile */
       #map-panel h2 { font-size: 36px; }
-      #lobby-map { top: 30px; right: 150px; font-size: 18px; padding: 8px 16px; }
+      #lobby-map { font-size: 18px; padding: 8px 16px; }
       /* Ride pass mobile */
       #ridepass-panel h2 { font-size: 36px; }
       .rp-level-list { max-height: 35vh; }
@@ -2206,14 +2251,21 @@
   </div>
 
   <div id="lobby-screen">
-    <!-- Corner buttons -->
-    <div class="lobby-corner-btn" id="lobby-shop">SHOP</div>
-    <div class="lobby-corner-btn" id="lobby-map">MAP</div>
-    <div class="lobby-corner-btn" id="lobby-ridepass">RIDE PASS</div>
-    <div class="lobby-corner-btn" id="lobby-quests">QUESTS</div>
-    <div class="lobby-corner-btn" id="lobby-customize">CUSTOMIZE</div>
-    <button id="lobby-logout">LOG OUT</button>
-    <div class="lobby-corner-btn" id="lobby-account">ACCOUNT</div>
+    <!-- Right side button stack -->
+    <div class="lobby-btn-stack">
+      <div class="lobby-corner-btn" id="lobby-shop">SHOP</div>
+      <div class="lobby-corner-btn" id="lobby-map">MAP</div>
+      <div class="lobby-corner-btn" id="lobby-quests">QUESTS</div>
+      <div class="lobby-corner-btn" id="lobby-ridepass">RIDE PASS</div>
+      <div class="lobby-corner-btn" id="lobby-account">ACCOUNT</div>
+      <button id="lobby-logout">LOG OUT</button>
+    </div>
+
+    <!-- Big party code banner (hidden until party created/joined) -->
+    <div id="party-code-banner" style="display:none">
+      <div class="party-code-label">PARTY CODE</div>
+      <div id="party-code-big">------</div>
+    </div>
 
     <!-- Center: DROP IN -->
     <button id="lobby-drop-in">DROP IN</button>
