@@ -1656,6 +1656,11 @@ export class Game {
     // Show touch controls on mobile
     if (this.touchControls) this.touchControls.show();
 
+    // Backcountry: reset terrain so chunks around checkpoint are loaded
+    if (this.gameMode === 'backcountry' && this.terrain.reset) {
+      this.terrain.reset(this.lastCheckpointPos.z);
+    }
+
     this.player.respawn(this.lastCheckpointPos);
     this.currentCameraPos.copy(
       this.lastCheckpointPos.clone().add(this.cameraOffset)
@@ -1845,6 +1850,11 @@ export class Game {
     this.quests.onRunStart();
     this.tricks.comboMultiplier = 1;
     this.tricks.comboTimer = 0;
+
+    // Backcountry: reset terrain so chunks at start are loaded
+    if (this.gameMode === 'backcountry' && this.terrain.reset) {
+      this.terrain.reset(0);
+    }
 
     // Reset checkpoints
     for (const cp of this.terrain.checkpoints) {

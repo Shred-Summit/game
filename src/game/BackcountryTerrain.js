@@ -1561,6 +1561,33 @@ export class BackcountryTerrain {
     }
   }
 
+  // Reset terrain back to initial state (for respawn / restart)
+  reset(spawnZ = 0) {
+    // Dispose all existing chunks
+    for (const chunk of this.chunks) {
+      this.scene.remove(chunk.mesh);
+      chunk.mesh.geometry.dispose();
+      for (const obj of chunk.objects) this.scene.remove(obj);
+    }
+    this.chunks = [];
+    this.obstacles = [];
+    this.ramps = [];
+    this.checkpoints = [];
+    this.chunksGenerated = 0;
+    this.nextCheckpointZ = -this.config.checkpointInterval;
+
+    // Re-seed RNG so terrain is identical
+    this.rng = mulberry32(this.config.seed);
+
+    // Generate chunks from the top down to cover the spawn position
+    const spawnChunkIdx = Math.floor(-spawnZ / this.chunkLength);
+    const target = Math.min(spawnChunkIdx + this.generateRadius + 1, this.config.totalChunks);
+    const initialChunks = Math.max(target, Math.min(this.generateRadius, this.config.totalChunks));
+    for (let i = 0; i < initialChunks; i++) {
+      this.generateChunk();
+    }
+  }
+
   // Clean up everything when switching back to park
   dispose() {
     for (const chunk of this.chunks) {
