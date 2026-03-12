@@ -600,11 +600,8 @@ export class Game {
     // Drop In button — park mode (or multiplayer start)
     this.ui.lobbyDropIn.addEventListener('click', () => {
       if (this.multiplayer.active) {
-        if (this.multiplayer.isHost) {
-          this.multiplayer.setGameMode('park', null);
-          this.multiplayer.startGame();
-        }
-        return;
+        if (!this.multiplayer.isHost) return; // Only host can start
+        this.multiplayer.setGameMode('park', null);
       }
       this.gameMode = 'park';
       this.backcountryChair = null;
