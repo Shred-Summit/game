@@ -13,11 +13,15 @@ export class Player {
 
     this.grounded = false;
     this.airTime = 0;
-    this.baseMaxSpeed = 36.11;
-    this.maxSpeed = 36.11;  // 130 km/h
+    this.visualSpeedScale = 1.2; // player moves 1.2x faster than displayed speed
+    this.baseMaxSpeed = 36.11 * 1.2;
+    this.maxSpeed = 36.11 * 1.2;
     this.gravity = -25;
     this.baseJumpForce = 8;
     this.jumpForce = 8;
+    this.baseOllieForce = 5;   // flat ground ollie (~6 feet on slopes)
+    this.ollieForce = 5;
+    this.launchedFromKicker = false; // true = kicker/terrain pop, false = flat ollie/rail
     this.flexMultiplier = 1.0;
 
     // Carving system — smooth laid-down carves
@@ -501,6 +505,7 @@ export class Player {
               this.velocity.y = popStrength;
               this.grounded = false;
               this.peakHeight = 0;
+              this.launchedFromKicker = true;
               this.terrainPopCooldown = 0.8;
             }
           }
@@ -729,10 +734,12 @@ export class Player {
           // On a kicker: store pop boost — applied at lip for extra air
           this.kickerPopBoost = this.jumpForce * 0.6;
         } else {
-          // Flat ground ollie
-          this.velocity.y = this.jumpForce;
+          // Backcountry: full jump (pillows, bumps, drops need big air)
+          // Park flat ground: reduced ollie (~6 feet)
+          this.velocity.y = this.backcountryMode ? this.jumpForce : this.ollieForce;
           this.grounded = false;
           this.peakHeight = 0;
+          this.launchedFromKicker = this.backcountryMode;
         }
       }
 
@@ -862,7 +869,7 @@ export class Player {
 
         // Minimum speed check: hop off rail below 35 km/h (9.722 m/s) — no points
         const grindSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
-        if (grindSpeed < 9.722) {
+        if (grindSpeed < 9.722 * this.visualSpeedScale) {
           this.grinding = false;
           this.grindAborted = true; // signal TrickSystem to skip scoring
           this.grindRail = null;
@@ -946,6 +953,7 @@ export class Player {
           this.grindRail = null;
           this.grounded = false;
           this.peakHeight = 0;
+          this.launchedFromKicker = true; // full trick rotation off rails
           this.grindExitTimer = 4.0; // prevent re-snap after jumping off
         }
       }
@@ -958,10 +966,12 @@ export class Player {
       // Spins and flips ramp up smoothly and STOP when keys are released.
       // Player must time their inputs to land clean rotations.
       // Shift = tuck in air → 1.5x faster spins/flips/corks
+      // Flat ground ollie → 1.5x slower rotation (no flip-worthy air without a kicker)
       const tuckMul = (input.tuck || input.grab) ? 1.5 : 1.0;
-      const flipTarget = 6.0 * tuckMul;     // target flip angular vel
-      const spinTarget = 6.5 * tuckMul;     // target spin angular vel
-      const rampUp = 14.0 * tuckMul;        // how fast rotation builds (rad/s²)
+      const flatMul = this.launchedFromKicker ? 1.0 : 0.5;
+      const flipTarget = 6.0 * tuckMul * flatMul;     // target flip angular vel
+      const spinTarget = 6.5 * tuckMul * flatMul;     // target spin angular vel
+      const rampUp = 14.0 * tuckMul * flatMul;        // how fast rotation builds (rad/s²)
       const stopSpeed = 18.0;     // how fast rotation stops on release (rad/s²)
 
       const flipping = input.flipForward || input.flipBackward;
@@ -1306,6 +1316,7 @@ export class Player {
       this.grounded = false;
       this.onKicker = null;
       this.peakHeight = 0;
+      this.launchedFromKicker = true;
       this.kickerCooldown = 1.5; // ignore kicker surfaces for 1.5s after launch
     }
   }
@@ -1600,6 +1611,7 @@ export class Player {
   applyBoardStats(speed, pop, flex) {
     this.maxSpeed = this.baseMaxSpeed * (0.85 + speed * 0.03);
     this.jumpForce = this.baseJumpForce * (0.85 + pop * 0.03);
+    this.ollieForce = this.baseOllieForce * (0.85 + pop * 0.03);
     this.flexMultiplier = 0.85 + flex * 0.03;
   }
 
@@ -1789,6 +1801,7 @@ export class Player {
     this.kickerCooldown = 0;
     this.kickerPopBoost = 0;
     this.terrainPopCooldown = 0;
+    this.launchedFromKicker = false;
     this.grounded = false;
     this.airTime = 0;
     this.isGrabbing = false;

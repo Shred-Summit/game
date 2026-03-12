@@ -5,7 +5,7 @@ import { TrickSystem } from './TrickSystem.js';
 import { InputManager, isTouchDevice } from './InputManager.js';
 import { TouchControls } from './TouchControls.js';
 import { SnowParticles } from './Particles.js';
-import { initFirebase, isFirebaseConfigured, submitScore, fetchWorldwideScores, getWeekId, getFirebaseAuth, createAccount, loginAccount, logoutAccount, resetPassword, onAuthChange, cloudSaveProgress, cloudLoadProgress, submitSummitScore, fetchSummitScores } from './firebase.js';
+import { initFirebase, isFirebaseConfigured, submitScore, fetchWorldwideScores, getFirebaseAuth, createAccount, loginAccount, logoutAccount, resetPassword, onAuthChange, cloudSaveProgress, cloudLoadProgress, submitSummitScore, fetchSummitScores } from './firebase.js';
 import { NicknameManager } from './NicknameManager.js';
 import { QuestSystem } from './QuestSystem.js';
 import { ShopSystem } from './ShopSystem.js';
@@ -1710,10 +1710,8 @@ export class Game {
       this.switchLeaderboardTab('worldwide');
       this.submitAndFetchSummitWorldwide(finalScore);
     } else {
-      // Park: weekly leaderboard
-      const weekId = getWeekId();
-      const parts = weekId.split('-W');
-      this.ui.weekIndicator.textContent = `WEEK ${parseInt(parts[1])} OF ${parts[0]}`;
+      // Park: all-time leaderboard
+      this.ui.weekIndicator.textContent = 'ALL TIME';
       this.renderLeaderboard(finalScore);
       this.switchLeaderboardTab('worldwide');
       this.submitAndFetchWorldwide(finalScore);
@@ -1747,9 +1745,9 @@ export class Game {
       }
 
       if (scores.length === 0) {
-        // Connected but no scores yet this week
+        // Connected but no scores yet
         this.ui.worldwideError.style.display = 'block';
-        this.ui.worldwideError.textContent = 'NO SCORES THIS WEEK — BE THE FIRST!';
+        this.ui.worldwideError.textContent = 'NO SCORES YET — BE THE FIRST!';
         return;
       }
 
@@ -1814,7 +1812,7 @@ export class Game {
     });
 
     if (entries.length === 0) {
-      container.innerHTML = '<div class="lb-loading">NO SCORES THIS WEEK YET</div>';
+      container.innerHTML = '<div class="lb-loading">NO SCORES YET</div>';
     }
   }
 
@@ -2894,8 +2892,8 @@ export class Game {
     // Score
     this.ui.score.textContent = trickState.score.toLocaleString();
 
-    // Speed
-    const kmh = Math.round(playerState.speed * 3.6);
+    // Speed (divide by visual scale so display matches original feel)
+    const kmh = Math.round(playerState.speed / 1.2 * 3.6);
     this.ui.speed.textContent = kmh;
 
     // Altitude

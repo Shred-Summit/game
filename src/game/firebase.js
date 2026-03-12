@@ -139,11 +139,9 @@ export function getWeekId(date = new Date()) {
 export async function submitScore(dbRef, nickname, score, title = null) {
   if (!dbRef) return null;
   try {
-    const weekId = getWeekId();
     const d = {
       nickname: nickname,
       score: score,
-      weekId: weekId,
       createdAt: serverTimestamp(),
     };
     if (title) d.title = title;
@@ -158,12 +156,10 @@ export async function submitScore(dbRef, nickname, score, title = null) {
 export async function fetchWorldwideScores(dbRef, maxResults = 20) {
   if (!dbRef) return null;
   try {
-    const weekId = getWeekId();
-    // Use only equality filter (no orderBy) to avoid requiring a composite index.
-    // Sort client-side instead.
+    // Fetch all scores (no weekly filter) — permanent all-time leaderboard
+    // Sort client-side to avoid requiring a composite index.
     const q = query(
       collection(dbRef, 'scores'),
-      where('weekId', '==', weekId),
       limit(500),
     );
     const snapshot = await getDocs(q);
