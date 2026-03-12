@@ -678,12 +678,8 @@ export class Game {
         const chairId = el.dataset.chair;
         if (chairId === 'park') return; // park uses DROP IN
         if (this.multiplayer.active) {
-          if (this.multiplayer.isHost) {
-            this.multiplayer.setGameMode('backcountry', chairId);
-            this.ui.mapPanel.classList.remove('active');
-            this.multiplayer.startGame();
-          }
-          return;
+          if (!this.multiplayer.isHost) return;
+          this.multiplayer.setGameMode('backcountry', chairId);
         }
         this.gameMode = 'backcountry';
         this.backcountryChair = chairId;
