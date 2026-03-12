@@ -66,6 +66,7 @@ export class Player {
     // Kicker launch cooldown — prevents re-launch when landing back on same kicker
     this.kickerCooldown = 0;
     this.kickerPopBoost = 0; // extra air from pressing space on a kicker
+    this.terrainPopCooldown = 0; // cooldown for terrain bump pops
 
     // Landing zone tracking
     this.landingQuality = null; // null, 'perfect', 'clean'
@@ -457,6 +458,7 @@ export class Player {
 
     // Tick kicker cooldown
     this.kickerCooldown = Math.max(0, this.kickerCooldown - dt);
+    this.terrainPopCooldown = Math.max(0, this.terrainPopCooldown - dt);
 
     // ===== EFFECTIVE SURFACE HEIGHT =====
     // Includes kicker surfaces — player rides up ramps naturally
@@ -471,6 +473,39 @@ export class Player {
     if (this.grounded && this.velocity.y <= 0 && !this.grinding) {
       this.position.y = surfaceH + groundOffset;
       this.velocity.y = 0;
+    }
+
+    // ===== TERRAIN POP — natural air from riding over bump crests =====
+    if (this.grounded && !this.grinding && !this.onKicker &&
+        this.kickerCooldown <= 0 && this.terrainPopCooldown <= 0) {
+      const pop = terrain.config?.terrainPop;
+      if (pop) {
+        const speed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+        if (speed > (pop.minSpeed || 8)) {
+          const eps = pop.sampleDist || 2.0;
+          const dirX = this.velocity.x / speed;
+          const dirZ = this.velocity.z / speed;
+          const hBehind = terrain.getHeightAt(
+            this.position.x - dirX * eps, this.position.z - dirZ * eps);
+          const hHere = terrain.getHeightAt(this.position.x, this.position.z);
+          const hAhead = terrain.getHeightAt(
+            this.position.x + dirX * eps, this.position.z + dirZ * eps);
+          // Negative curvature = convex = crest of a bump
+          const curvature = (hAhead - 2 * hHere + hBehind) / (eps * eps);
+          if (curvature < -(pop.curvatureThreshold || 0.01)) {
+            const popStrength = Math.min(
+              -curvature * speed * (pop.popFactor || 12),
+              pop.maxPop || 12
+            );
+            if (popStrength > 1.5) {
+              this.velocity.y = popStrength;
+              this.grounded = false;
+              this.peakHeight = 0;
+              this.terrainPopCooldown = 0.8;
+            }
+          }
+        }
+      }
     }
 
     // ===== GROUND / SURFACE COLLISION =====
@@ -1741,6 +1776,7 @@ export class Player {
     this.updateStanceYaw();
     this.kickerCooldown = 0;
     this.kickerPopBoost = 0;
+    this.terrainPopCooldown = 0;
     this.grounded = false;
     this.airTime = 0;
     this.isGrabbing = false;
@@ -1957,6 +1993,8 @@ export class Player {
       landingQuality: this.landingQuality,
       landedOnRail: this.landedOnRail,
       isSwitch: this.isSwitch,
+      turnRate: this.turnRate,
+      velocityY: this.velocity.y,
       grindAborted: this.grindAborted,
       inRiver: this.inRiver,
       daveRescuing: this.daveRescuing,

@@ -1439,6 +1439,48 @@ export class Game {
         this.particles.emit(this.player.position, this.player.velocity, sprayCount);
       }
 
+      // Backcountry powder spray — stomps and hard carves
+      if (this.gameMode === 'backcountry') {
+        // Stomp spray — big powder burst on landing
+        if (playerState.grounded && !playerState.wasGrounded && playerState.airTime > 0.3) {
+          const impactSpeed = Math.abs(playerState.velocityY || 0);
+          const stompCount = Math.min(Math.ceil(impactSpeed * 6), 80);
+          const spread = Math.min(impactSpeed * 0.8, 6);
+          const pos = this.player.position;
+          // Spray outward in all directions from landing point
+          for (let i = 0; i < stompCount; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const spd = (1 + Math.random() * spread);
+            this.particles.emit(
+              { x: pos.x, y: pos.y, z: pos.z },
+              { x: Math.cos(angle) * spd, y: 2 + Math.random() * impactSpeed * 0.5, z: Math.sin(angle) * spd },
+              1
+            );
+          }
+        }
+
+        // Hard carve spray — powder rooster tail on aggressive turns
+        const turnStrength = Math.abs(playerState.turnRate || 0);
+        if (playerState.grounded && playerState.speed > 8 && turnStrength > 1.2) {
+          const intensity = (turnStrength - 1.2) / (2.3 - 1.2); // 0-1 based on turn range
+          const carveCount = Math.ceil(intensity * playerState.speed * 0.4);
+          // Spray kicks out to the outside of the turn
+          const turnDir = playerState.turnRate > 0 ? -1 : 1;
+          const heading = this.player.heading;
+          const sideX = Math.cos(heading) * turnDir;
+          const sideZ = -Math.sin(heading) * turnDir;
+          const pos = this.player.position;
+          for (let i = 0; i < Math.min(carveCount, 12); i++) {
+            const spraySpeed = 2 + Math.random() * playerState.speed * 0.2;
+            this.particles.emit(
+              { x: pos.x + sideX * 0.5, y: pos.y + 0.1, z: pos.z + sideZ * 0.5 },
+              { x: sideX * spraySpeed + (Math.random() - 0.5), y: 1.5 + Math.random() * 2, z: sideZ * spraySpeed + (Math.random() - 0.5) },
+              1
+            );
+          }
+        }
+      }
+
       // Quest tracking — consume scored tricks/grinds
       if (this.tricks.lastScoredTrick) {
         this.quests.onTrickLanded(this.tricks.lastScoredTrick);

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 export class SnowParticles {
   constructor(scene) {
     this.scene = scene;
-    this.particleCount = 500;
+    this.particleCount = 1200;
 
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(this.particleCount * 3);

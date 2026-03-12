@@ -72,27 +72,233 @@ const CHAIRS = {
 
   biggie: {
     name: 'BIGGIE PILLOW LINES',
-    slopeAngle: 0.55,
-    chunkWidth: 100,
-    chunkLength: 300,
-    totalChunks: 6,
+    slopeAngle: 0.42,
+    chunkWidth: 2400,
+    chunkLength: 75,
+    totalChunks: 56,
     seed: 137,
-    bowlStrength: 10,
-    bowlWidth: 40,
+    bowlStrength: 8,
+    bowlWidth: 900,             // wide usable terrain
     cliffs: [],
-    treeLineZ: -99999,
-    rockDensity: 0.3,
-    treeDensity: 0.5,
-    checkpointInterval: 450,
-    checkpointCount: 4,
+    treeLineZ: 0,
+    rockDensity: 2.0,           // rocks for visual variety
+    treeDensity: 44.0,          // dense trees — Revelstoke-style tree runs
+    checkpointInterval: 340,
+    checkpointCount: 12,
+    generateRadius: 1,
+
+    // Aggressive pillow field — distinct mounds you launch off
+    pillowField: {
+      strength: 7.0,
+      frequency: 0.065,         // sharper crests for natural air
+      secondaryFreq: 0.028,
+      secondaryStrength: 5.0,
+    },
+
+    // Terrain pop — natural air from riding over pillow crests (~7 feet)
+    terrainPop: {
+      curvatureThreshold: 0.008,  // min convexity to trigger pop
+      popFactor: 14,              // curvature * speed * factor = pop velocity
+      maxPop: 11,                 // cap: ~7 feet peak at moderate speed
+      sampleDist: 2.0,            // curvature sample distance
+      minSpeed: 8,                // must be moving to pop
+    },
+
+    // Multi-octave terrain noise for natural rollers, bumps, and variation
+    terrainNoise: {
+      rollerAmplitude: 4.5,     // large cross-slope rollers
+      rollerFreqZ: 0.038,
+      rollerFreqX: 0.007,
+      mediumAmplitude: 2.8,     // medium terrain bumps
+      mediumFreqX: 0.045,
+      mediumFreqZ: 0.055,
+      smallAmplitude: 1.2,      // small terrain detail
+      smallFreqX: 0.11,
+      smallFreqZ: 0.14,
+    },
+
+    // Variable slope zones
+    slopeZones: [
+      { endZ: -400,  slope: 0.50 },   // steep entry with pillow drops
+      { endZ: -900,  slope: 0.35 },   // mellow pillow glades
+      { endZ: -1500, slope: 0.55 },   // steep pillow chutes with cliffs
+      { endZ: -2100, slope: 0.32 },   // mellow tree runs
+      { endZ: -2800, slope: 0.52 },   // steep cliff and pillow zone
+      { endZ: -3500, slope: 0.38 },   // mellow wooded pillows
+      { endZ: -4200, slope: 0.48 },   // final steep runout
+    ],
+
+    // Partial cliffs spread across the full width
+    partialCliffs: [
+      // Zone 1: Steep entry (0 to -400) — warm-up drops spread wide
+      { zStart: -60,   drop: 8,   xCenter: -400,  xWidth: 250 },
+      { zStart: -80,   drop: 10,  xCenter: 200,   xWidth: 200 },
+      { zStart: -140,  drop: 12,  xCenter: -100,  xWidth: 280 },
+      { zStart: -180,  drop: 15,  xCenter: 500,   xWidth: 300 },
+      { zStart: -220,  drop: 8,   xCenter: -600,  xWidth: 220 },
+      { zStart: -260,  drop: 18,  xCenter: 50,    xWidth: 350 },
+      { zStart: -310,  drop: 10,  xCenter: 400,   xWidth: 250 },
+      { zStart: -350,  drop: 12,  xCenter: -350,  xWidth: 280 },
+      { zStart: -390,  drop: 8,   xCenter: 650,   xWidth: 200 },
+
+      // Zone 2: Mellow glades (-400 to -900)
+      { zStart: -430,  drop: 10,  xCenter: -500,  xWidth: 280 },
+      { zStart: -470,  drop: 15,  xCenter: 300,   xWidth: 300 },
+      { zStart: -520,  drop: 8,   xCenter: -200,  xWidth: 200 },
+      { zStart: -570,  drop: 20,  xCenter: 600,   xWidth: 350 },
+      { zStart: -620,  drop: 12,  xCenter: -450,  xWidth: 250 },
+      { zStart: -670,  drop: 14,  xCenter: 100,   xWidth: 280 },
+      { zStart: -720,  drop: 10,  xCenter: -650,  xWidth: 220 },
+      { zStart: -770,  drop: 18,  xCenter: 450,   xWidth: 320 },
+      { zStart: -830,  drop: 8,   xCenter: -150,  xWidth: 220 },
+      { zStart: -880,  drop: 12,  xCenter: 550,   xWidth: 250 },
+
+      // Zone 3: Steep chutes (-900 to -1500) — big drops
+      { zStart: -930,  drop: 25,  xCenter: -350,  xWidth: 380 },
+      { zStart: -970,  drop: 15,  xCenter: 500,   xWidth: 300 },
+      { zStart: -1030, drop: 35,  xCenter: 0,     xWidth: 400 },
+      { zStart: -1090, drop: 20,  xCenter: -550,  xWidth: 300 },
+      { zStart: -1140, drop: 45,  xCenter: 250,   xWidth: 450 },
+      { zStart: -1200, drop: 15,  xCenter: -200,  xWidth: 250 },
+      { zStart: -1260, drop: 30,  xCenter: 600,   xWidth: 350 },
+      { zStart: -1320, drop: 50,  xCenter: -400,  xWidth: 400 },
+      { zStart: -1380, drop: 20,  xCenter: 150,   xWidth: 300 },
+      { zStart: -1440, drop: 40,  xCenter: -600,  xWidth: 350 },
+      { zStart: -1480, drop: 25,  xCenter: 400,   xWidth: 300 },
+
+      // Zone 4: Mellow trees (-1500 to -2100)
+      { zStart: -1540, drop: 12,  xCenter: -500,  xWidth: 250 },
+      { zStart: -1600, drop: 18,  xCenter: 350,   xWidth: 300 },
+      { zStart: -1660, drop: 10,  xCenter: -100,  xWidth: 220 },
+      { zStart: -1720, drop: 25,  xCenter: 550,   xWidth: 350 },
+      { zStart: -1780, drop: 15,  xCenter: -400,  xWidth: 280 },
+      { zStart: -1840, drop: 30,  xCenter: 100,   xWidth: 320 },
+      { zStart: -1910, drop: 12,  xCenter: -650,  xWidth: 220 },
+      { zStart: -1970, drop: 20,  xCenter: 400,   xWidth: 300 },
+      { zStart: -2040, drop: 10,  xCenter: -250,  xWidth: 250 },
+
+      // Zone 5: Steep cliff zone (-2100 to -2800) — massive drops
+      { zStart: -2130, drop: 40,  xCenter: -300,  xWidth: 400 },
+      { zStart: -2180, drop: 25,  xCenter: 500,   xWidth: 350 },
+      { zStart: -2240, drop: 60,  xCenter: 50,    xWidth: 500 },
+      { zStart: -2300, drop: 15,  xCenter: -550,  xWidth: 250 },
+      { zStart: -2360, drop: 50,  xCenter: 300,   xWidth: 400 },
+      { zStart: -2420, drop: 70,  xCenter: -150,  xWidth: 450 },
+      { zStart: -2490, drop: 20,  xCenter: 650,   xWidth: 300 },
+      { zStart: -2550, drop: 55,  xCenter: -400,  xWidth: 400 },
+      { zStart: -2620, drop: 35,  xCenter: 200,   xWidth: 350 },
+      { zStart: -2690, drop: 45,  xCenter: -500,  xWidth: 380 },
+      { zStart: -2760, drop: 30,  xCenter: 450,   xWidth: 300 },
+
+      // Zone 6: Mellow wooded (-2800 to -3500)
+      { zStart: -2830, drop: 15,  xCenter: 400,   xWidth: 280 },
+      { zStart: -2890, drop: 25,  xCenter: -200,  xWidth: 300 },
+      { zStart: -2950, drop: 12,  xCenter: 600,   xWidth: 220 },
+      { zStart: -3020, drop: 30,  xCenter: -450,  xWidth: 350 },
+      { zStart: -3090, drop: 18,  xCenter: 100,   xWidth: 280 },
+      { zStart: -3160, drop: 20,  xCenter: -350,  xWidth: 300 },
+      { zStart: -3230, drop: 10,  xCenter: 500,   xWidth: 250 },
+      { zStart: -3300, drop: 25,  xCenter: -100,  xWidth: 320 },
+      { zStart: -3370, drop: 15,  xCenter: 350,   xWidth: 250 },
+      { zStart: -3440, drop: 18,  xCenter: -550,  xWidth: 280 },
+
+      // Zone 7: Final runout (-3500 to -4200)
+      { zStart: -3530, drop: 20,  xCenter: -400,  xWidth: 300 },
+      { zStart: -3600, drop: 30,  xCenter: 200,   xWidth: 350 },
+      { zStart: -3670, drop: 12,  xCenter: -150,  xWidth: 250 },
+      { zStart: -3740, drop: 25,  xCenter: 550,   xWidth: 300 },
+      { zStart: -3810, drop: 15,  xCenter: -500,  xWidth: 280 },
+      { zStart: -3880, drop: 18,  xCenter: 50,    xWidth: 250 },
+      { zStart: -3950, drop: 10,  xCenter: -300,  xWidth: 220 },
+      { zStart: -4020, drop: 20,  xCenter: 350,   xWidth: 300 },
+      { zStart: -4100, drop: 8,   xCenter: -200,  xWidth: 200 },
+    ],
+
+    // Hand-placed jumps spread across the full width
+    jumps: [
+      // Zone 1: Steep entry
+      { z: -80,   x: -300,  feet: 25 },
+      { z: -100,  x: 250,   feet: 20 },
+      { z: -170,  x: -50,   feet: 30 },
+      { z: -200,  x: 500,   feet: 20 },
+      { z: -270,  x: -500,  feet: 25 },
+      { z: -330,  x: 150,   feet: 20 },
+      { z: -380,  x: -250,  feet: 25 },
+      // Zone 2: Mellow glades
+      { z: -440,  x: 400,   feet: 25 },
+      { z: -490,  x: -350,  feet: 30 },
+      { z: -540,  x: 50,    feet: 20 },
+      { z: -590,  x: 550,   feet: 25 },
+      { z: -650,  x: -450,  feet: 20 },
+      { z: -710,  x: 200,   feet: 30 },
+      { z: -770,  x: -150,  feet: 20 },
+      { z: -830,  x: 350,   feet: 25 },
+      { z: -880,  x: -550,  feet: 20 },
+      // Zone 3: Steep chutes
+      { z: -950,  x: 400,   feet: 30 },
+      { z: -1000, x: -200,  feet: 25 },
+      { z: -1060, x: 150,   feet: 35 },
+      { z: -1120, x: -500,  feet: 25 },
+      { z: -1180, x: 300,   feet: 30 },
+      { z: -1250, x: -100,  feet: 25 },
+      { z: -1310, x: 550,   feet: 20 },
+      { z: -1370, x: -400,  feet: 30 },
+      { z: -1430, x: 50,    feet: 25 },
+      { z: -1490, x: -300,  feet: 20 },
+      // Zone 4: Mellow trees
+      { z: -1550, x: 250,   feet: 25 },
+      { z: -1620, x: -350,  feet: 20 },
+      { z: -1690, x: 450,   feet: 25 },
+      { z: -1750, x: -50,   feet: 30 },
+      { z: -1820, x: 350,   feet: 20 },
+      { z: -1890, x: -500,  feet: 25 },
+      { z: -1960, x: 100,   feet: 25 },
+      { z: -2030, x: -350,  feet: 20 },
+      { z: -2080, x: 500,   feet: 25 },
+      // Zone 5: Steep drops
+      { z: -2150, x: -200,  feet: 30 },
+      { z: -2220, x: 400,   feet: 35 },
+      { z: -2290, x: -450,  feet: 25 },
+      { z: -2360, x: 150,   feet: 30 },
+      { z: -2430, x: -100,  feet: 35 },
+      { z: -2500, x: 550,   feet: 25 },
+      { z: -2570, x: -350,  feet: 30 },
+      { z: -2640, x: 250,   feet: 25 },
+      { z: -2720, x: -500,  feet: 30 },
+      { z: -2780, x: 50,    feet: 25 },
+      // Zone 6: Mellow wooded
+      { z: -2850, x: 400,   feet: 25 },
+      { z: -2920, x: -250,  feet: 20 },
+      { z: -2990, x: 300,   feet: 30 },
+      { z: -3060, x: -500,  feet: 25 },
+      { z: -3130, x: 100,   feet: 20 },
+      { z: -3200, x: -150,  feet: 25 },
+      { z: -3270, x: 500,   feet: 30 },
+      { z: -3340, x: -400,  feet: 20 },
+      { z: -3420, x: 200,   feet: 25 },
+      { z: -3480, x: -300,  feet: 20 },
+      // Zone 7: Final runout
+      { z: -3550, x: 350,   feet: 25 },
+      { z: -3630, x: -200,  feet: 30 },
+      { z: -3700, x: 450,   feet: 20 },
+      { z: -3780, x: -100,  feet: 25 },
+      { z: -3860, x: 300,   feet: 30 },
+      { z: -3940, x: -450,  feet: 20 },
+      { z: -4020, x: 150,   feet: 25 },
+      { z: -4100, x: -250,  feet: 20 },
+    ],
+
+    // Procedural natural kickers per chunk (wind lips, snow mounds, pillows)
+    naturalKickerDensity: 6,
+    naturalKickerSpread: 1500,
   },
 
   peak: {
     name: 'PEAK BACKCOUNTRY',
     slopeAngle: 0.40,             // base slope (overridden by slopeZones)
     chunkWidth: 2400,             // ~3x summit's 800
-    chunkLength: 300,
-    totalChunks: 14,
+    chunkLength: 75,
+    totalChunks: 56,
     seed: 256,
     bowlStrength: 8,              // gentle bowl sides — wide open terrain
     bowlWidth: 800,               // flat floor extends 800 units each side
@@ -345,6 +551,27 @@ export class BackcountryTerrain {
     // Very subtle terrain variation — smooth bowl, no bumps
     height += Math.sin(x * 0.005 + globalZ * 0.002) * 0.4;
 
+    // Multi-octave terrain noise — natural rollers, bumps, and micro-terrain
+    if (cfg.terrainNoise) {
+      const tn = cfg.terrainNoise;
+      // Large rollers perpendicular to slope — create natural air opportunities
+      const rollerPhase = Math.sin(x * tn.rollerFreqX) * 2.0;
+      const roller = Math.sin(globalZ * tn.rollerFreqZ + rollerPhase) * tn.rollerAmplitude;
+      // Vary roller amplitude across width so it's not uniform
+      const rollerMod = 0.5 + 0.5 * Math.sin(x * tn.rollerFreqX * 3.7 + globalZ * 0.003);
+      height += roller * rollerMod;
+
+      // Medium bumps — offset frequencies for organic feel
+      const med1 = Math.sin(x * tn.mediumFreqX + 1.7) * Math.cos(globalZ * tn.mediumFreqZ + 0.9);
+      const med2 = Math.cos(x * tn.mediumFreqX * 0.6 + 3.2) * Math.sin(globalZ * tn.mediumFreqZ * 1.4 + 2.1);
+      height += (med1 + med2 * 0.6) * tn.mediumAmplitude;
+
+      // Small terrain detail — crunchy surface variation
+      const sm1 = Math.sin(x * tn.smallFreqX + 3.1) * Math.sin(globalZ * tn.smallFreqZ + 2.3);
+      const sm2 = Math.cos(x * tn.smallFreqX * 1.3 + 0.5) * Math.cos(globalZ * tn.smallFreqZ * 0.8 + 1.7);
+      height += (sm1 + sm2 * 0.5) * tn.smallAmplitude;
+    }
+
     // Bowl shape — terrain curves up on the sides
     const distFromCenter = Math.abs(x);
     if (distFromCenter > cfg.bowlWidth) {
@@ -396,6 +623,17 @@ export class BackcountryTerrain {
           height -= sb.depth * t * t;
         }
       }
+    }
+
+    // Pillow field — rounded snow mounds at two scales
+    if (cfg.pillowField) {
+      const pf = cfg.pillowField;
+      const p1 = Math.sin(x * pf.frequency) * Math.cos(globalZ * pf.frequency * 1.3);
+      const p2 = Math.cos(x * pf.frequency * 0.7 + 1.5) * Math.sin(globalZ * pf.frequency * 0.9 + 0.8);
+      const pillow = Math.max(0, (p1 + p2) * 0.5) * pf.strength;
+      const s1 = Math.sin(x * pf.secondaryFreq + 2.3) * Math.cos(globalZ * pf.secondaryFreq * 1.1 + 1.1);
+      const secondary = (s1 * 0.5 + 0.5) * pf.secondaryStrength;
+      height += pillow + secondary;
     }
 
     // Partial-width cliffs — only affect part of the terrain width
@@ -528,6 +766,18 @@ export class BackcountryTerrain {
       colors[i * 3 + 1] = base - shadowTint * 0.5;
       colors[i * 3 + 2] = base + shadowTint;
 
+      // Pillow highlights — slightly brighter on mound tops
+      if (cfg.pillowField) {
+        const pf = cfg.pillowField;
+        const p1 = Math.sin(x * pf.frequency) * Math.cos(globalZ * pf.frequency * 1.3);
+        const p2 = Math.cos(x * pf.frequency * 0.7 + 1.5) * Math.sin(globalZ * pf.frequency * 0.9 + 0.8);
+        const pillowIntensity = Math.max(0, (p1 + p2) * 0.5);
+        const brighten = pillowIntensity * 0.04;
+        colors[i * 3] = Math.min(1, colors[i * 3] + brighten);
+        colors[i * 3 + 1] = Math.min(1, colors[i * 3 + 1] + brighten);
+        colors[i * 3 + 2] = Math.min(1, colors[i * 3 + 2] + brighten * 0.5);
+      }
+
       // Full-width cliff faces get dark rock color
       for (const cliff of cfg.cliffs) {
         if (globalZ < cliff.zStart && globalZ > cliff.zEnd) {
@@ -614,6 +864,8 @@ export class BackcountryTerrain {
     this.placeRocks(chunk, zOffset);
     this.placeTrees(chunk, zOffset);
     this.placeRiverVisuals(chunk, zOffset);
+    this.placeJumps(chunk, zOffset);
+    this.placeNaturalKickers(chunk, zOffset);
 
     // ---- Checkpoints ----
     while (this.nextCheckpointZ > zOffset - this.chunkLength &&
@@ -770,9 +1022,125 @@ export class BackcountryTerrain {
     }
   }
 
+  // ---- JUMP PLACEMENT (fixed positions from config) ----
+  placeJumps(chunk, zOffset) {
+    const cfg = this.config;
+    if (!cfg.jumps) return;
+
+    for (const jump of cfg.jumps) {
+      if (jump.z > zOffset || jump.z < zOffset - this.chunkLength) continue;
+
+      const feet = jump.feet;
+      const scale = feet / 30;
+      const width = 4.0 * scale;
+      const length = 5.0 * scale;
+      const lipHeight = 2.0 * scale;
+      const lipAngle = 0.45;
+
+      const feature = this.createBackcountryJump(feet);
+
+      // Embed in terrain — sample height across footprint
+      const halfW = width / 2;
+      const halfL = length / 2;
+      let minY = Infinity;
+      for (const sx of [-halfW, 0, halfW]) {
+        for (const sz of [-halfL, 0, halfL]) {
+          const h = this.computeHeight(jump.x + sx, jump.z + sz);
+          if (h < minY) minY = h;
+        }
+      }
+      minY -= 0.2;
+
+      feature.position.set(jump.x, minY, jump.z);
+      this.scene.add(feature);
+      chunk.objects.push(feature);
+
+      // Register as kicker for Player.js physics
+      const rampData = {
+        mesh: feature,
+        position: new THREE.Vector3(jump.x, minY, jump.z),
+        type: 'kicker',
+        width,
+        length,
+        size: 'small',
+        lipHeight,
+        lipAngle,
+        surfaceHeight: 0,
+      };
+      this.ramps.push(rampData);
+
+      if (!chunk.chunkRamps) chunk.chunkRamps = [];
+      chunk.chunkRamps.push(rampData);
+    }
+  }
+
+  // ---- NATURAL KICKER PLACEMENT (procedural wind lips, snow mounds, pillows) ----
+  placeNaturalKickers(chunk, zOffset) {
+    const cfg = this.config;
+    if (!cfg.naturalKickerDensity) return;
+
+    const count = cfg.naturalKickerDensity;
+    const spread = cfg.naturalKickerSpread || (cfg.bowlWidth * 1.4);
+
+    for (let i = 0; i < count; i++) {
+      const x = (this.rng() - 0.5) * spread;
+      const z = (this.rng() - 0.5) * this.chunkLength;
+      const globalZ = zOffset + z;
+
+      // Skip if too close to center line
+      if (Math.abs(x) < 5) continue;
+
+      // Random size: 15-40 foot equivalent
+      const feet = 15 + this.rng() * 25;
+      const scale = feet / 30;
+      const width = 4.5 * scale;
+      const length = 5.5 * scale;
+      const lipHeight = 2.2 * scale;
+      const lipAngle = 0.38 + this.rng() * 0.18;
+
+      // 65% natural mounds, 35% man-made kickers
+      const isNatural = this.rng() > 0.35;
+      const feature = isNatural
+        ? this.createNaturalMound(feet)
+        : this.createBackcountryJump(feet);
+
+      // Embed in terrain
+      const halfW = width / 2;
+      const halfL = length / 2;
+      let minY = Infinity;
+      for (const sx of [-halfW, 0, halfW]) {
+        for (const sz of [-halfL, 0, halfL]) {
+          const h = this.computeHeight(x + sx, globalZ + sz);
+          if (h < minY) minY = h;
+        }
+      }
+      minY -= 0.3;
+
+      feature.position.set(x, minY, globalZ);
+      this.scene.add(feature);
+      chunk.objects.push(feature);
+
+      // Register as kicker ramp for player physics
+      const rampData = {
+        mesh: feature,
+        position: new THREE.Vector3(x, minY, globalZ),
+        type: 'kicker',
+        width,
+        length,
+        size: 'small',
+        lipHeight,
+        lipAngle,
+        surfaceHeight: 0,
+      };
+      this.ramps.push(rampData);
+      if (!chunk.chunkRamps) chunk.chunkRamps = [];
+      chunk.chunkRamps.push(rampData);
+    }
+  }
+
   // ---- ROCK PLACEMENT (deterministic) ----
   placeRocks(chunk, zOffset) {
-    const count = Math.floor(12 * this.config.rockDensity);
+    const count = Math.floor(12 * this.config.rockDensity * (this.chunkLength / 300));
     for (let i = 0; i < count; i++) {
       const x = (this.rng() - 0.5) * (this.config.bowlWidth * 1.8);
       const z = (this.rng() - 0.5) * this.chunkLength;
@@ -798,7 +1166,7 @@ export class BackcountryTerrain {
     const chunkBottomZ = zOffset - this.chunkLength;
     if (chunkBottomZ > cfg.treeLineZ) return;
 
-    const count = Math.floor(20 * cfg.treeDensity);
+    const count = Math.floor(20 * cfg.treeDensity * (this.chunkLength / 300));
     // For wide terrain with dense trees, spread within bowl width not full chunk width
     const treeSpreadX = cfg.partialCliffs ? cfg.bowlWidth * 1.8 : cfg.chunkWidth * 0.8;
     for (let i = 0; i < count; i++) {
@@ -964,6 +1332,93 @@ export class BackcountryTerrain {
     return group;
   }
 
+  createBackcountryJump(feet) {
+    const group = new THREE.Group();
+    const scale = feet / 30;
+    const rampHeight = 2.0 * scale;
+    const rampLength = 5.0 * scale;
+    const rampWidth = 4.0 * scale;
+    const halfW = rampWidth / 2;
+
+    const segments = 8;
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const px = t * rampLength;
+      const py = rampHeight * Math.pow(t, 0.7);
+      shape.lineTo(px, py);
+    }
+    // Backside drops down smoothly — natural snow mound shape
+    shape.lineTo(rampLength * 1.1, rampHeight * 0.6);
+    shape.lineTo(rampLength * 1.2, 0);
+    shape.lineTo(0, 0);
+
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+      depth: rampWidth, bevelEnabled: false,
+    });
+    geometry.rotateY(Math.PI / 2);
+    geometry.translate(-halfW, 0, rampLength / 2);
+    geometry.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geometry, this.snowMaterial);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+
+    return group;
+  }
+
+  createNaturalMound(feet) {
+    const group = new THREE.Group();
+    const scale = feet / 30;
+    const moundHeight = 1.8 * scale;
+    const moundWidth = 4.0 * scale;
+    const moundLength = 5.0 * scale;
+
+    // Organic snow mound shape using extruded profile
+    const segments = 10;
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    // Gradual ramp up — more natural than a man-made kicker
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      // Asymmetric profile: gentle rise, steeper lip
+      const px = t * moundLength;
+      const py = moundHeight * Math.sin(t * Math.PI * 0.55);
+      shape.lineTo(px, py);
+    }
+    // Back side rolls off naturally
+    shape.lineTo(moundLength * 1.15, moundHeight * 0.4);
+    shape.lineTo(moundLength * 1.3, 0);
+    shape.lineTo(0, 0);
+
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+      depth: moundWidth, bevelEnabled: false,
+    });
+    geometry.rotateY(Math.PI / 2);
+    geometry.translate(-moundWidth / 2, 0, moundLength / 2);
+
+    // Distort vertices for organic feel
+    const pos = geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const vx = pos.getX(i);
+      const vy = pos.getY(i);
+      const vz = pos.getZ(i);
+      // Wobble edges for natural snow shape
+      pos.setX(i, vx + Math.sin(vz * 1.8 + vy * 2.5) * 0.2 * scale);
+      pos.setZ(i, vz + Math.cos(vx * 2.1 + vy * 1.3) * 0.15 * scale);
+    }
+    geometry.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geometry, this.snowMaterial);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+
+    return group;
+  }
+
   createCheckpoint() {
     const group = new THREE.Group();
     const poleHeight = 6;
@@ -1097,6 +1552,11 @@ export class BackcountryTerrain {
       if (old.chunkObstacles && old.chunkObstacles.length > 0) {
         const toRemove = new Set(old.chunkObstacles);
         this.obstacles = this.obstacles.filter(o => !toRemove.has(o));
+      }
+      // Clean up ramps belonging to this chunk
+      if (old.chunkRamps && old.chunkRamps.length > 0) {
+        const toRemove = new Set(old.chunkRamps);
+        this.ramps = this.ramps.filter(r => !toRemove.has(r));
       }
     }
   }
