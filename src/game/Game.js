@@ -824,7 +824,8 @@ export class Game {
     });
 
     this.ui.partyStart.addEventListener('click', () => {
-      this.multiplayer.startGame();
+      this.multiplayer.setGameMode(this.gameMode || 'park', this.backcountryChair || null);
+      this.closeLobby();
     });
 
     // Stop party panel clicks from propagating to lobby
