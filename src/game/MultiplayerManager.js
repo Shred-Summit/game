@@ -398,7 +398,7 @@ export class MultiplayerManager {
     // Reset party state to lobby so others can rejoin
     if (this.isHost && this.partyCode) {
       const partyRef = rtdbRef(this.rtdb, `parties/${this.partyCode}`);
-      rtdbUpdate(partyRef, { state: 'lobby' });
+      rtdbUpdate(partyRef, { state: 'lobby', gameMode: 'park', chair: null });
     }
   }
 
