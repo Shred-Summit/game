@@ -582,6 +582,12 @@ export class Game {
           if (stanceRow) {
             stanceRow.style.display = this.selectedEquipment === 'ski' ? 'none' : '';
           }
+          // Sync bottom equipment bar
+          document.querySelectorAll('[data-equip-bar]').forEach(b => b.classList.remove('selected'));
+          const barBtn = document.querySelector(`[data-equip-bar="${newType}"]`);
+          if (barBtn) barBtn.classList.add('selected');
+          const stanceBar = document.getElementById('equip-bar-stance');
+          if (stanceBar) stanceBar.style.display = newType === 'ski' ? 'none' : '';
         }
       });
     });
@@ -594,6 +600,65 @@ export class Game {
         this.selectedStance = btn.dataset.stance;
         this.player.stance = this.selectedStance;
         this.player.updateStanceYaw();
+        // Sync bottom stance bar
+        document.querySelectorAll('[data-stance-bar]').forEach(b => b.classList.remove('selected'));
+        const barBtn = document.querySelector(`[data-stance-bar="${this.selectedStance}"]`);
+        if (barBtn) barBtn.classList.add('selected');
+      });
+    });
+
+    // Bottom equipment bar (snowboard / ski)
+    document.querySelectorAll('[data-equip-bar]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const newType = btn.dataset.equipBar;
+        document.querySelectorAll('[data-equip-bar]').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        // Show/hide stance row
+        const stanceBar = document.getElementById('equip-bar-stance');
+        if (stanceBar) stanceBar.style.display = newType === 'ski' ? 'none' : '';
+        if (newType !== this.selectedEquipment) {
+          this.selectedEquipment = newType;
+          const savedColors = {};
+          document.querySelectorAll('.color-options').forEach(group => {
+            const part = group.dataset.part;
+            const sel = group.querySelector('.color-swatch.selected');
+            if (sel) savedColors[part] = parseInt(sel.dataset.color);
+          });
+          this.scene.remove(this.player.group);
+          this.player = new Player(this.scene, this.selectedEquipment);
+          this.player.stance = this.selectedStance;
+          this.player.updateStanceYaw();
+          for (const [part, color] of Object.entries(savedColors)) {
+            this.player.setColor(part, color);
+          }
+          this.applyEquippedItems();
+          // Sync customize panel buttons
+          document.querySelectorAll('[data-equipment]').forEach(b => b.classList.remove('selected'));
+          const matchBtn = document.querySelector(`[data-equipment="${newType}"]`);
+          if (matchBtn) matchBtn.classList.add('selected');
+          const stanceRow = document.getElementById('stance-row');
+          if (stanceRow) stanceRow.style.display = newType === 'ski' ? 'none' : '';
+          const boardRow = document.querySelector('[data-part="board"]');
+          if (boardRow) {
+            boardRow.closest('.lobby-row').querySelector('label').textContent =
+              newType === 'ski' ? 'Skis' : 'Board';
+          }
+        }
+      });
+    });
+
+    // Bottom stance bar (regular / goofy)
+    document.querySelectorAll('[data-stance-bar]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-stance-bar]').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        this.selectedStance = btn.dataset.stanceBar;
+        this.player.stance = this.selectedStance;
+        this.player.updateStanceYaw();
+        // Sync customize panel buttons
+        document.querySelectorAll('[data-stance]').forEach(b => b.classList.remove('selected'));
+        const matchBtn = document.querySelector(`[data-stance="${this.selectedStance}"]`);
+        if (matchBtn) matchBtn.classList.add('selected');
       });
     });
 
@@ -1659,6 +1724,10 @@ export class Game {
     // Backcountry: reset terrain so chunks around checkpoint are loaded
     if (this.gameMode === 'backcountry' && this.terrain.reset) {
       this.terrain.reset(this.lastCheckpointPos.z);
+      // Mark already-passed checkpoints as reached so they don't re-trigger
+      for (let i = 0; i < Math.min(this.currentCheckpoint, this.terrain.checkpoints.length); i++) {
+        this.terrain.checkpoints[i].reached = true;
+      }
     }
 
     this.player.respawn(this.lastCheckpointPos);
