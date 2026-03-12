@@ -911,8 +911,12 @@ export class Game {
   }
 
   closeLobby() {
-    this.teardownLobbyScene();
+    // Guard against double-calling (e.g. click handler + Firebase callback)
+    if (this.state !== 'lobby') return;
+
+    // Hide lobby UI immediately so it disappears even if teardown errors
     this.ui.lobbyScreen.classList.remove('active');
+    this.teardownLobbyScene();
     this.applyEquippedItems();
     this.swapTerrain();
     this.player.backcountryMode = this.gameMode === 'backcountry';

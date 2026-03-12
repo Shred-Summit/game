@@ -237,15 +237,14 @@ export class MultiplayerManager {
   onGameStart() {
     this._gameStarted = true;
 
-    // Non-host: set game mode from party data
-    if (!this.isHost) {
-      this.game.closeLobby();
-    }
+    // Close lobby for ALL players (host included as a fallback)
+    this.game.closeLobby();
 
     // Create remote players for all other members
     this.createRemotePlayers();
 
-    // Listen for remote player state updates
+    // Start syncing player state and listen for remote updates
+    this.startSendLoop();
     this.listenToGameState();
   }
 
