@@ -681,6 +681,7 @@ export class Game {
           if (!this.multiplayer.isHost) return;
           this.multiplayer.setGameMode('backcountry', chairId);
         }
+        console.log('[chair click] chairId:', chairId, 'multiplayer:', this.multiplayer.active);
         this.gameMode = 'backcountry';
         this.backcountryChair = chairId;
         this.ui.mapPanel.classList.remove('active');
@@ -914,6 +915,7 @@ export class Game {
     this.ui.lobbyScreen.classList.remove('active');
     this.teardownLobbyScene();
     this.applyEquippedItems();
+    console.log('[closeLobby] gameMode:', this.gameMode, 'chair:', this.backcountryChair);
     this.swapTerrain();
     this.player.backcountryMode = this.gameMode === 'backcountry';
     // Reload per-chair leaderboard now that backcountryChair is set
@@ -929,14 +931,17 @@ export class Game {
   }
 
   swapTerrain() {
+    console.log('[swapTerrain] gameMode:', this.gameMode, 'chair:', this.backcountryChair);
     // Always dispose old terrain first
     if (this.terrain && this.terrain.dispose) {
       this.terrain.dispose();
     }
 
     if (this.gameMode === 'backcountry') {
+      console.log('[swapTerrain] Creating BackcountryTerrain');
       this.terrain = new BackcountryTerrain(this.scene, this.backcountryChair);
     } else {
+      console.log('[swapTerrain] Creating Park Terrain');
       const seed = this.multiplayer.active ? this.multiplayer.terrainSeed : null;
       this.terrain = new Terrain(this.scene, seed);
       this.parkTerrain = this.terrain;
