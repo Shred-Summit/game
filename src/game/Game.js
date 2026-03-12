@@ -13,6 +13,7 @@ import { RidePass } from './RidePass.js';
 import { createBoardTexture, createJacketLogo } from './BoardGraphics.js';
 import { BackcountryTerrain } from './BackcountryTerrain.js';
 import { MultiplayerManager } from './MultiplayerManager.js';
+import { RemotePlayer } from './RemotePlayer.js';
 
 export class Game {
   constructor() {
@@ -862,6 +863,11 @@ export class Game {
       div.className = 'party-member' + (uid === hostUid ? ' host' : '');
       div.textContent = data.nickname || 'Player';
       this.ui.partyMembers.appendChild(div);
+    }
+
+    // Sync lobby remote players if currently in lobby
+    if (this.state === 'lobby' && this.lobbyGroup) {
+      this.syncLobbyRemotePlayers();
     }
   }
 
@@ -1960,9 +1966,19 @@ export class Game {
     // Position player so hips land on the sitting log top
     // Log top ≈ groundY + 0.30; hip joint is at riderGroup.y + 0.55 in local space
     this.player.group.position.set(px, groundY - 0.25, pz);
-    this.player.group.rotation.set(0, Math.PI + 0.4, 0); // Face toward fire
+    this.player.group.rotation.set(0, Math.PI / 2, 0); // Face directly toward campfire
     this.player.setSittingPose();
     this.player.setBoardVisible(false);
+
+    // === MULTIPLAYER LOBBY MEMBERS ===
+    this.lobbyFireX = fireX;
+    this.lobbyFireZ = fireZ;
+    this.lobbyBaseGroundY = groundY;
+    this.lobbyRemotePlayers = {};
+    this.lobbyLogs = [];
+    if (this.multiplayer.active) {
+      this.syncLobbyRemotePlayers();
+    }
 
     // === CAMERA ===
     // Store the lobby focus point (midpoint between player and fire)
@@ -1988,6 +2004,15 @@ export class Game {
   teardownLobbyScene() {
     if (!this.lobbyGroup) return;
 
+    // Dispose lobby remote players
+    if (this.lobbyRemotePlayers) {
+      for (const uid of Object.keys(this.lobbyRemotePlayers)) {
+        this.lobbyRemotePlayers[uid].dispose();
+      }
+      this.lobbyRemotePlayers = null;
+    }
+    this.lobbyLogs = null;
+
     // Remove lobby objects
     this.lobbyGroup.traverse(child => {
       if (child.geometry) child.geometry.dispose();
@@ -2010,6 +2035,85 @@ export class Game {
 
     // Restore player board
     this.player.setBoardVisible(true);
+  }
+
+  syncLobbyRemotePlayers() {
+    if (!this.lobbyGroup || this.state !== 'lobby') return;
+
+    const selfUid = this.currentUser?.uid;
+    if (!selfUid) return;
+
+    const members = this.multiplayer.members;
+    const fireX = this.lobbyFireX;
+    const fireZ = this.lobbyFireZ;
+    const R = 1.8;
+
+    // Seat angles for up to 3 remote players (semicircle around fire)
+    const REMOTE_SEAT_ANGLES = [3 * Math.PI / 4, Math.PI / 4, Math.PI];
+    const remoteMemberUids = Object.keys(members).filter(uid => uid !== selfUid);
+
+    // Remove players who left
+    for (const uid of Object.keys(this.lobbyRemotePlayers)) {
+      if (!remoteMemberUids.includes(uid)) {
+        this.lobbyRemotePlayers[uid].dispose();
+        delete this.lobbyRemotePlayers[uid];
+      }
+    }
+
+    // Remove old extra logs
+    for (const logGroup of this.lobbyLogs) {
+      this.lobbyGroup.remove(logGroup);
+      logGroup.traverse(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material && child.material.dispose) child.material.dispose();
+      });
+    }
+    this.lobbyLogs = [];
+
+    const logMat = new THREE.MeshStandardMaterial({ color: 0x4a3520, roughness: 0.9 });
+
+    remoteMemberUids.forEach((uid, index) => {
+      if (index >= 3) return;
+
+      const angle = REMOTE_SEAT_ANGLES[index];
+      const seatX = fireX + Math.cos(angle) * R;
+      const seatZ = fireZ + Math.sin(angle) * R;
+      const seatTerrainY = this.terrain.getHeightAt(seatX, seatZ);
+      const seatGroundY = seatTerrainY + 0.05;
+
+      // Sitting log
+      const logGroup = new THREE.Group();
+      logGroup.position.set(seatX, seatGroundY + 0.15, seatZ);
+      logGroup.rotation.y = angle;
+      const log = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.15, 0.18, 1.4, 8),
+        logMat.clone()
+      );
+      log.rotation.z = Math.PI / 2;
+      logGroup.add(log);
+      this.lobbyGroup.add(logGroup);
+      this.lobbyLogs.push(logGroup);
+
+      // Create remote player if new
+      if (!this.lobbyRemotePlayers[uid]) {
+        const data = members[uid];
+        const remote = new RemotePlayer(
+          this.scene,
+          uid,
+          data.nickname || 'Player',
+          data.cosmetics || {}
+        );
+        this.lobbyRemotePlayers[uid] = remote;
+      }
+
+      const remote = this.lobbyRemotePlayers[uid];
+      remote.player.group.position.set(seatX, seatGroundY - 0.25, seatZ);
+      remote.player.group.rotation.set(0, angle, 0);
+      remote.player.setSittingPose();
+      remote.player.setBoardVisible(false);
+      remote.lastUpdateTime = performance.now();
+      remote.player.group.visible = true;
+    });
   }
 
   updateLobby(dt) {
@@ -2052,6 +2156,14 @@ export class Game {
     );
     this.sun.target.position.set(this.lobbyCenterX, this.lobbyCenterY, this.lobbyCenterZ);
     this.sun.target.updateMatrixWorld();
+
+    // Update lobby remote player nickname positions
+    if (this.lobbyRemotePlayers) {
+      for (const remote of Object.values(this.lobbyRemotePlayers)) {
+        remote.updateNicknamePosition(this.camera);
+        if (remote.trickDiv) remote.trickDiv.style.display = 'none';
+      }
+    }
   }
 
   // ---- QUEST RENDERING ----
