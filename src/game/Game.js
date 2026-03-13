@@ -413,6 +413,10 @@ export class Game {
       if (cloudData.shop) this.shop.setData(cloudData.shop);
       if (cloudData.ridePass) this.ridePass.setData(cloudData.ridePass);
       if (cloudData.quests) this.quests.setData(cloudData.quests);
+      // Season reset may have zeroed XP — ensure ride pass matches
+      if (this.quests.getTotalXP() === 0 && this.ridePass.data.claimedLevels.length > 0) {
+        this.ridePass.reset();
+      }
       if (cloudData.leaderboard) {
         this.leaderboard = cloudData.leaderboard;
         try { localStorage.setItem('shred-summit-leaderboard', JSON.stringify(this.leaderboard)); } catch (e) { /* ignore */ }
