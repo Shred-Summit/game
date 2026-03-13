@@ -196,6 +196,7 @@ export class MultiplayerManager {
       if (!this.isHost && data.gameMode) {
         this.game.gameMode = data.gameMode;
         this.game.backcountryChair = data.chair || null;
+        if (data.parkId) this.game.parkId = data.parkId;
         this.terrainSeed = data.seed || 12345;
       }
 
@@ -221,10 +222,10 @@ export class MultiplayerManager {
 
   // ---- GAME START ----
 
-  setGameMode(mode, chair) {
+  setGameMode(mode, chair, parkId = null) {
     if (!this.isHost || !this.partyCode) return;
     const partyRef = rtdbRef(this.rtdb, `parties/${this.partyCode}`);
-    rtdbUpdate(partyRef, { gameMode: mode, chair: chair || null });
+    rtdbUpdate(partyRef, { gameMode: mode, chair: chair || null, parkId: parkId || null });
   }
 
   async startGame() {
@@ -398,7 +399,7 @@ export class MultiplayerManager {
     // Reset party state to lobby so others can rejoin
     if (this.isHost && this.partyCode) {
       const partyRef = rtdbRef(this.rtdb, `parties/${this.partyCode}`);
-      rtdbUpdate(partyRef, { state: 'lobby', gameMode: 'park', chair: null });
+      rtdbUpdate(partyRef, { state: 'lobby', gameMode: 'park', chair: null, parkId: null });
     }
   }
 

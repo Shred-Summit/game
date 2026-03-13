@@ -136,7 +136,7 @@ export function getWeekId(date = new Date()) {
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
 
-export async function submitScore(dbRef, nickname, score, title = null) {
+export async function submitScore(dbRef, nickname, score, title = null, parkId = null) {
   if (!dbRef) return null;
   try {
     const d = {
@@ -145,6 +145,7 @@ export async function submitScore(dbRef, nickname, score, title = null) {
       createdAt: serverTimestamp(),
     };
     if (title) d.title = title;
+    if (parkId && parkId !== 'big-white') d.parkId = parkId;
     const docRef = await addDoc(collection(dbRef, 'scores'), d);
     return docRef.id;
   } catch (e) {
@@ -156,7 +157,7 @@ export async function submitScore(dbRef, nickname, score, title = null) {
 // Park scores submitted before this date are ignored (bug-abused scores)
 const PARK_RESET_EPOCH = new Date('2026-03-14T00:00:00Z');
 
-export async function fetchWorldwideScores(dbRef, maxResults = 20) {
+export async function fetchWorldwideScores(dbRef, maxResults = 20, parkId = null) {
   if (!dbRef) return null;
   try {
     // All scores live in 'scores' collection — park scores have no chair field
@@ -172,7 +173,12 @@ export async function fetchWorldwideScores(dbRef, maxResults = 20) {
       if (s.chair) return false; // not a park score
       // Ignore park scores before reset epoch
       if (s.createdAt && s.createdAt.toDate && s.createdAt.toDate() < PARK_RESET_EPOCH) return false;
-      return true;
+      // Filter by parkId — legacy scores (no parkId) are big-white
+      if (parkId && parkId !== 'big-white') {
+        return s.parkId === parkId;
+      } else {
+        return !s.parkId || s.parkId === 'big-white';
+      }
     });
     scores.sort((a, b) => b.score - a.score);
     return scores.slice(0, maxResults);

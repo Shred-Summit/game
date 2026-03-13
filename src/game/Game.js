@@ -39,6 +39,7 @@ export class Game {
     this.parkTerrain = this.terrain; // keep reference to default park terrain
     this.gameMode = 'park';          // 'park' | 'backcountry'
     this.backcountryChair = null;    // 'summit', 'biggie', 'peak'
+    this.parkId = 'big-white';       // 'big-white', 'woodward', 'xgames'
     this.selectedEquipment = 'snowboard';
     this.selectedStance = 'regular';
     this.player = new Player(this.scene, this.selectedEquipment);
@@ -683,7 +684,7 @@ export class Game {
     this.ui.lobbyDropIn.addEventListener('click', () => {
       if (this.multiplayer.active) {
         if (!this.multiplayer.isHost) return; // Only host can start
-        this.multiplayer.setGameMode('park', null);
+        this.multiplayer.setGameMode('park', null, this.parkId);
       }
       this.gameMode = 'park';
       this.backcountryChair = null;
@@ -758,7 +759,6 @@ export class Game {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         const chairId = el.dataset.chair;
-        if (chairId === 'park') return; // park uses DROP IN
         if (this.multiplayer.active) {
           if (!this.multiplayer.isHost) return;
           this.multiplayer.setGameMode('backcountry', chairId);
@@ -771,14 +771,38 @@ export class Game {
       });
     });
 
+    // Map tab switching (BACKCOUNTRY / PARK)
+    document.querySelectorAll('.map-tab[data-map-tab]').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const tabId = tab.dataset.mapTab;
+        document.querySelectorAll('.map-tab[data-map-tab]').forEach(t =>
+          t.classList.toggle('active', t.dataset.mapTab === tabId)
+        );
+        document.getElementById('map-backcountry-tab').classList.toggle('active', tabId === 'backcountry');
+        document.getElementById('map-park-tab').classList.toggle('active', tabId === 'park');
+      });
+    });
+
+    // Park card selection
+    document.querySelectorAll('.park-card[data-park]').forEach(card => {
+      card.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.park-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        this.parkId = card.dataset.park;
+        this.gameMode = 'park';
+        this.backcountryChair = null;
+      });
+    });
+
     // Scores button → open scores panel
-    this.activeScoresTab = 'park';
+    this.activeScoresTab = 'big-white';
     this.ui.lobbyScores.addEventListener('click', () => {
-      this.activeScoresTab = 'park';
+      this.activeScoresTab = 'big-white';
       document.querySelectorAll('.scores-tab').forEach(t =>
-        t.classList.toggle('active', t.dataset.scoresTab === 'park')
+        t.classList.toggle('active', t.dataset.scoresTab === 'big-white')
       );
-      this.fetchAndRenderScores('park');
+      this.fetchAndRenderScores('big-white');
       this.ui.scoresPanel.classList.add('active');
     });
     this.ui.scoresPanel.addEventListener('click', (e) => e.stopPropagation());
@@ -928,7 +952,7 @@ export class Game {
     });
 
     this.ui.partyStart.addEventListener('click', () => {
-      this.multiplayer.setGameMode(this.gameMode || 'park', this.backcountryChair || null);
+      this.multiplayer.setGameMode(this.gameMode || 'park', this.backcountryChair || null, this.parkId || null);
       this.closeLobby();
     });
 
@@ -1000,6 +1024,18 @@ export class Game {
     this.ui.questsPanel.classList.remove('active');
     this.ui.ridepassPanel.classList.remove('active');
     this.ui.mapPanel.classList.remove('active');
+    // Reset map tabs to backcountry default
+    document.querySelectorAll('.map-tab[data-map-tab]').forEach(t =>
+      t.classList.toggle('active', t.dataset.mapTab === 'backcountry')
+    );
+    const bcTab = document.getElementById('map-backcountry-tab');
+    const pkTab = document.getElementById('map-park-tab');
+    if (bcTab) bcTab.classList.add('active');
+    if (pkTab) pkTab.classList.remove('active');
+    // Highlight the current parkId card
+    document.querySelectorAll('.park-card').forEach(c =>
+      c.classList.toggle('selected', c.dataset.park === this.parkId)
+    );
     this.ui.shopPanel.classList.remove('active');
     this.ui.accountPanel.classList.remove('active');
     this.ui.lobbyScreen.classList.add('active');
@@ -1025,9 +1061,11 @@ export class Game {
     console.log('[closeLobby] gameMode:', this.gameMode, 'chair:', this.backcountryChair);
     this.swapTerrain();
     this.player.backcountryMode = this.gameMode === 'backcountry';
-    // Reload per-chair leaderboard now that backcountryChair is set
+    // Reload per-chair/park leaderboard
     if (this.gameMode === 'backcountry') {
       this.summitLeaderboard = this.loadSummitLeaderboard();
+    } else {
+      this.leaderboard = this.loadLeaderboard();
     }
     this.fullReset();
 
@@ -1048,9 +1086,9 @@ export class Game {
       console.log('[swapTerrain] Creating BackcountryTerrain');
       this.terrain = new BackcountryTerrain(this.scene, this.backcountryChair);
     } else {
-      console.log('[swapTerrain] Creating Park Terrain');
+      console.log('[swapTerrain] Creating Park Terrain, parkId:', this.parkId);
       const seed = this.multiplayer.active ? this.multiplayer.terrainSeed : null;
-      this.terrain = new Terrain(this.scene, seed);
+      this.terrain = new Terrain(this.scene, seed, this.parkId);
       this.parkTerrain = this.terrain;
     }
   }
@@ -1802,8 +1840,9 @@ export class Game {
       ? this.addToSummitLeaderboard(finalScore)
       : this.addToLeaderboard(finalScore);
 
-    // Title: "SUMMIT LEADERBOARD" for backcountry, "RUN COMPLETE" for park
-    this.ui.finishTitle.textContent = isSummit ? 'SUMMIT LEADERBOARD' : 'RUN COMPLETE';
+    // Title: use terrain name or fallback
+    const parkName = this.terrain.config ? this.terrain.config.name : null;
+    this.ui.finishTitle.textContent = isSummit ? 'SUMMIT LEADERBOARD' : (parkName || 'RUN COMPLETE');
 
     this.ui.finishScreen.classList.add('active');
     this.ui.finishScore.textContent = finalScore.toLocaleString();
@@ -1844,12 +1883,12 @@ export class Game {
     this.ui.worldwideEntries.innerHTML = '';
 
     try {
-      // Submit score to Firebase (include ride pass title)
+      // Submit score to Firebase (include ride pass title and park ID)
       const title = this.ridePass.getSelectedTitle();
-      await submitScore(db, nickname, finalScore, title);
+      await submitScore(db, nickname, finalScore, title, this.parkId);
 
       // Fetch worldwide leaderboard (returns null on error, [] on empty)
-      const scores = await fetchWorldwideScores(db, 20);
+      const scores = await fetchWorldwideScores(db, 20, this.parkId);
 
       this.ui.worldwideLoading.style.display = 'none';
 
@@ -1941,8 +1980,9 @@ export class Game {
 
     try {
       let scores;
-      if (tab === 'park') {
-        scores = await fetchWorldwideScores(db, 20);
+      const parkTabs = ['big-white', 'woodward', 'xgames'];
+      if (parkTabs.includes(tab)) {
+        scores = await fetchWorldwideScores(db, 20, tab);
       } else {
         scores = await fetchSummitScores(db, tab, 20);
       }
@@ -2870,16 +2910,20 @@ export class Game {
   // ---- LEADERBOARD ----
 
   loadLeaderboard() {
+    const parkId = this.parkId || 'big-white';
     try {
-      const data = localStorage.getItem('shred-summit-leaderboard');
+      // Try per-park key first, fall back to legacy key for big-white
+      const data = localStorage.getItem(`shred-summit-park-leaderboard-${parkId}`)
+        || (parkId === 'big-white' ? localStorage.getItem('shred-summit-leaderboard') : null);
       if (data) return JSON.parse(data);
     } catch (e) { /* ignore */ }
     return [];
   }
 
   saveLeaderboard() {
+    const parkId = this.parkId || 'big-white';
     try {
-      localStorage.setItem('shred-summit-leaderboard', JSON.stringify(this.leaderboard));
+      localStorage.setItem(`shred-summit-park-leaderboard-${parkId}`, JSON.stringify(this.leaderboard));
     } catch (e) { /* ignore */ }
     this.cloudSaveAll();
   }

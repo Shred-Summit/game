@@ -691,8 +691,10 @@
     }
     .scores-tabs {
       display: flex;
-      gap: 0;
+      gap: 4px;
       margin-bottom: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
     }
     .scores-tab {
       padding: 8px 20px;
@@ -705,8 +707,7 @@
       cursor: pointer;
       transition: color 0.2s, border-color 0.2s, background 0.2s;
     }
-    .scores-tab:first-child { border-radius: 6px 0 0 6px; }
-    .scores-tab:last-child { border-radius: 0 6px 6px 0; }
+    .scores-tab { border-radius: 4px; }
     .scores-tab.active {
       color: #fff;
       background: rgba(255,255,255,0.1);
@@ -795,12 +796,75 @@
     .map-chair:hover {
       transform: scale(1.1);
     }
-    .map-chair[data-chair="park"] {
-      cursor: default;
-      opacity: 0.5;
+    /* Map tabs */
+    .map-tabs {
+      display: flex;
+      margin-bottom: 16px;
     }
-    .map-chair[data-chair="park"]:hover {
-      transform: none;
+    .map-tab {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 18px;
+      letter-spacing: 3px;
+      color: rgba(255,255,255,0.45);
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.15);
+      padding: 8px 24px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .map-tab:first-child { border-radius: 6px 0 0 6px; }
+    .map-tab:last-child { border-radius: 0 6px 6px 0; }
+    .map-tab.active {
+      color: #fff;
+      background: rgba(255,255,255,0.15);
+      border-color: rgba(255,255,255,0.4);
+    }
+    .map-tab-content { display: none; flex-direction: column; align-items: center; width: 100%; }
+    .map-tab-content.active { display: flex; }
+    /* Park cards */
+    .park-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      width: 90%;
+      max-width: 500px;
+      padding: 20px 0;
+    }
+    .park-card {
+      background: rgba(255,255,255,0.08);
+      border: 2px solid rgba(255,255,255,0.15);
+      border-radius: 12px;
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .park-card:hover {
+      background: rgba(255,255,255,0.15);
+      border-color: rgba(255,255,255,0.4);
+      transform: scale(1.02);
+    }
+    .park-card.selected {
+      border-color: #4caf50;
+      background: rgba(76,175,80,0.15);
+    }
+    .park-card-name {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 24px;
+      letter-spacing: 3px;
+      color: #fff;
+    }
+    .park-card-desc {
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      color: rgba(255,255,255,0.6);
+      margin-top: 4px;
+    }
+    .park-card-difficulty {
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      margin-top: 8px;
     }
     .map-chair-line {
       width: 3px;
@@ -2242,6 +2306,9 @@
       /* Map mobile */
       #map-panel h2 { font-size: 36px; }
       #lobby-map { font-size: 18px; padding: 8px 16px; }
+      .map-tab { padding: 6px 16px; font-size: 14px; letter-spacing: 2px; }
+      .park-card { padding: 14px; }
+      .park-card-name { font-size: 20px; }
       /* Ride pass mobile */
       #ridepass-panel h2 { font-size: 36px; }
       .rp-level-list { max-height: 35vh; }
@@ -2462,55 +2529,69 @@
     <!-- Map panel (hidden until MAP clicked) -->
     <div id="map-panel">
       <h2>TRAIL MAP</h2>
-      <div class="map-container">
-        <!-- Mountain shape -->
-        <svg class="map-mountain" viewBox="0 0 700 875" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-          <!-- Sky gradient already from container bg -->
-          <!-- Mountain body -->
-          <polygon points="350,30 80,600 0,875 700,875 620,600" fill="#4a6741" opacity="0.5"/>
-          <polygon points="350,30 150,500 50,875 650,875 550,500" fill="#5a7a52" opacity="0.4"/>
-          <!-- Snow cap -->
-          <polygon points="350,30 280,180 310,160 350,200 390,160 420,180" fill="rgba(255,255,255,0.6)"/>
-          <!-- Tree line texture -->
-          <rect x="60" y="550" width="580" height="325" fill="#2d5a3a" opacity="0.3" rx="8"/>
-        </svg>
-
-        <div class="map-summit-marker">&#9650; SHRED SUMMIT — 3,200m</div>
-
-        <!-- Peak Chair (top, hardest) -->
-        <div class="map-chair" data-chair="peak" style="left: 50%; top: 8%; transform: translateX(-50%);">
-          <div class="map-chair-dot red"></div>
-          <div class="map-chair-line" style="height: 120px;"></div>
-          <div class="map-chair-label">PEAK CHAIR</div>
-          <div class="map-trail-tag">EXPERT ONLY</div>
-        </div>
-
-        <!-- Summit Chair (upper-left) -->
-        <div class="map-chair" data-chair="summit" style="left: 22%; top: 25%;">
-          <div class="map-chair-dot black"></div>
-          <div class="map-chair-line" style="height: 140px;"></div>
-          <div class="map-chair-label">SUMMIT CHAIR</div>
-          <div class="map-trail-tag">ADVANCED</div>
-        </div>
-
-        <!-- Biggie Chair (upper-right) -->
-        <div class="map-chair" data-chair="biggie" style="left: 68%; top: 28%;">
-          <div class="map-chair-dot blue"></div>
-          <div class="map-chair-line" style="height: 130px;"></div>
-          <div class="map-chair-label">BIGGIE CHAIR</div>
-          <div class="map-trail-tag">INTERMEDIATE</div>
-        </div>
-
-        <!-- Park Chair (lower-center, beginner-friendly) -->
-        <div class="map-chair" data-chair="park" style="left: 40%; top: 55%;">
-          <div class="map-chair-dot green"></div>
-          <div class="map-chair-line" style="height: 110px;"></div>
-          <div class="map-chair-label">PARK CHAIR</div>
-          <div class="map-trail-tag">ALL LEVELS · DROP IN</div>
-        </div>
-
-        <div class="map-lodge">BASE LODGE</div>
+      <div class="map-tabs">
+        <button class="map-tab active" data-map-tab="backcountry">BACKCOUNTRY</button>
+        <button class="map-tab" data-map-tab="park">PARK</button>
       </div>
+
+      <!-- BACKCOUNTRY TAB -->
+      <div id="map-backcountry-tab" class="map-tab-content active">
+        <div class="map-container">
+          <svg class="map-mountain" viewBox="0 0 700 875" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+            <polygon points="350,30 80,600 0,875 700,875 620,600" fill="#4a6741" opacity="0.5"/>
+            <polygon points="350,30 150,500 50,875 650,875 550,500" fill="#5a7a52" opacity="0.4"/>
+            <polygon points="350,30 280,180 310,160 350,200 390,160 420,180" fill="rgba(255,255,255,0.6)"/>
+            <rect x="60" y="550" width="580" height="325" fill="#2d5a3a" opacity="0.3" rx="8"/>
+          </svg>
+
+          <div class="map-summit-marker">&#9650; SHRED SUMMIT — 3,200m</div>
+
+          <div class="map-chair" data-chair="peak" style="left: 50%; top: 8%; transform: translateX(-50%);">
+            <div class="map-chair-dot red"></div>
+            <div class="map-chair-line" style="height: 120px;"></div>
+            <div class="map-chair-label">PEAK CHAIR</div>
+            <div class="map-trail-tag">EXPERT ONLY</div>
+          </div>
+
+          <div class="map-chair" data-chair="summit" style="left: 22%; top: 25%;">
+            <div class="map-chair-dot black"></div>
+            <div class="map-chair-line" style="height: 140px;"></div>
+            <div class="map-chair-label">SUMMIT CHAIR</div>
+            <div class="map-trail-tag">ADVANCED</div>
+          </div>
+
+          <div class="map-chair" data-chair="biggie" style="left: 68%; top: 28%;">
+            <div class="map-chair-dot blue"></div>
+            <div class="map-chair-line" style="height: 130px;"></div>
+            <div class="map-chair-label">BIGGIE CHAIR</div>
+            <div class="map-trail-tag">INTERMEDIATE</div>
+          </div>
+
+          <div class="map-lodge">BASE LODGE</div>
+        </div>
+      </div>
+
+      <!-- PARK TAB -->
+      <div id="map-park-tab" class="map-tab-content">
+        <div class="park-cards">
+          <div class="park-card selected" data-park="big-white">
+            <div class="park-card-name">BIG WHITE TELUS PARK</div>
+            <div class="park-card-desc">Classic park progression — small jumps to massive booters</div>
+            <div class="park-card-difficulty" style="color:#4caf50;">&#9679; ALL LEVELS</div>
+          </div>
+          <div class="park-card" data-park="woodward">
+            <div class="park-card-name">WOODWARD COPPER PARK</div>
+            <div class="park-card-desc">Starts big with 100ft kickers, kinked rails, ends with 150ft booters</div>
+            <div class="park-card-difficulty" style="color:#ff9800;">&#9679; ADVANCED</div>
+          </div>
+          <div class="park-card" data-park="xgames">
+            <div class="park-card-name">X-GAMES PARK</div>
+            <div class="park-card-desc">Massive 200ft booters, 4x thick rails, donkey dicks &amp; waterfalls</div>
+            <div class="park-card-difficulty" style="color:#e53935;">&#9679; EXPERT ONLY</div>
+          </div>
+        </div>
+      </div>
+
       <button id="map-back">BACK</button>
     </div>
 
@@ -2556,7 +2637,9 @@
     <div id="scores-panel">
       <h2>LEADERBOARDS</h2>
       <div class="scores-tabs">
-        <button class="scores-tab active" data-scores-tab="park">PARK</button>
+        <button class="scores-tab active" data-scores-tab="big-white">BIG WHITE</button>
+        <button class="scores-tab" data-scores-tab="woodward">WOODWARD</button>
+        <button class="scores-tab" data-scores-tab="xgames">X-GAMES</button>
         <button class="scores-tab" data-scores-tab="biggie">BIGGIE</button>
         <button class="scores-tab" data-scores-tab="summit">SUMMIT</button>
         <button class="scores-tab" data-scores-tab="peak">PEAK</button>
