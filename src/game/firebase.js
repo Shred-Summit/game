@@ -156,8 +156,7 @@ export async function submitScore(dbRef, nickname, score, title = null) {
 export async function fetchWorldwideScores(dbRef, maxResults = 20) {
   if (!dbRef) return null;
   try {
-    // Fetch all scores (no weekly filter) — permanent all-time leaderboard
-    // Sort client-side to avoid requiring a composite index.
+    // All scores live in 'scores' collection — park scores have no chair field
     const q = query(
       collection(dbRef, 'scores'),
       limit(500),
@@ -166,7 +165,7 @@ export async function fetchWorldwideScores(dbRef, maxResults = 20) {
     const scores = snapshot.docs.map(d => ({
       id: d.id,
       ...d.data(),
-    }));
+    })).filter(s => !s.chair);
     scores.sort((a, b) => b.score - a.score);
     return scores.slice(0, maxResults);
   } catch (e) {
@@ -185,7 +184,7 @@ export async function submitSummitScore(dbRef, nickname, score, chair, title = n
       createdAt: serverTimestamp(),
     };
     if (title) d.title = title;
-    const docRef = await addDoc(collection(dbRef, 'summit_scores'), d);
+    const docRef = await addDoc(collection(dbRef, 'scores'), d);
     return docRef.id;
   } catch (e) {
     console.warn('Failed to submit summit score to Firebase:', e);
@@ -196,9 +195,9 @@ export async function submitSummitScore(dbRef, nickname, score, chair, title = n
 export async function fetchSummitScores(dbRef, chair, maxResults = 20) {
   if (!dbRef) return null;
   try {
-    // Fetch all summit scores and filter client-side to avoid needing a composite index
+    // All scores live in 'scores' collection — filter by chair client-side
     const q = query(
-      collection(dbRef, 'summit_scores'),
+      collection(dbRef, 'scores'),
       limit(500),
     );
     const snapshot = await getDocs(q);
