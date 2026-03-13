@@ -47,6 +47,7 @@ export class Game {
     this.tricks = new TrickSystem();
     this.quests = new QuestSystem();
     this.ridePass = new RidePass();
+    this.quests.onSeasonReset = () => this.ridePass.reset();
     this.shop = new ShopSystem(this.ridePass);
     this.activeShopTab = 'jacket';
     this.particles = new SnowParticles(this.scene);

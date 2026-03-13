@@ -114,6 +114,11 @@ export class RidePass {
     };
   }
 
+  reset() {
+    this.data = this.createFreshData();
+    this.save();
+  }
+
   getLevel(totalXP) {
     return Math.min(Math.floor(totalXP / XP_PER_LEVEL), MAX_LEVEL);
   }

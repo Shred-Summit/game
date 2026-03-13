@@ -89,6 +89,7 @@ const QUEST_CYCLE_DAYS = 30;
 export class QuestSystem {
   constructor() {
     this.onSave = null; // cloud save callback
+    this.onSeasonReset = null; // called when season resets (to reset ride pass)
     this.data = this.load();
     this.checkDailyReset();
     this.checkSeasonReset();
@@ -162,7 +163,9 @@ export class QuestSystem {
       this.data.seasonProgress = SEASON_QUESTS.map(q => ({
         id: q.id, current: 0, target: q.target, completed: false,
       }));
+      this.data.totalXP = 0;
       this.save();
+      if (this.onSeasonReset) this.onSeasonReset();
     }
   }
 
