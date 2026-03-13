@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, query, where, limit, getDocs, serverTimestamp, doc, setDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, query, where, limit, getDocs, serverTimestamp, doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getDatabase, ref as rtdbRef, set as rtdbSet, get as rtdbGet, onValue, onDisconnect, remove as rtdbRemove, update as rtdbUpdate, serverTimestamp as rtdbTimestamp } from 'firebase/database';
 
@@ -210,5 +210,28 @@ export async function fetchSummitScores(dbRef, chair, maxResults = 20) {
   } catch (e) {
     console.warn('Failed to fetch summit scores:', e);
     return null;
+  }
+}
+
+// ---- ONE-TIME CLEANUP: delete all park scores (no chair field) ----
+export async function clearParkScores(dbRef) {
+  if (!dbRef) return 0;
+  const GUARD = 'shred-park-scores-cleared-v1';
+  if (localStorage.getItem(GUARD)) return -1; // already ran
+  try {
+    const q = query(collection(dbRef, 'scores'), limit(500));
+    const snapshot = await getDocs(q);
+    const parkDocs = snapshot.docs.filter(d => !d.data().chair);
+    let deleted = 0;
+    for (const d of parkDocs) {
+      await deleteDoc(doc(dbRef, 'scores', d.id));
+      deleted++;
+    }
+    localStorage.setItem(GUARD, Date.now().toString());
+    console.log(`[clearParkScores] Deleted ${deleted} park scores`);
+    return deleted;
+  } catch (e) {
+    console.warn('clearParkScores failed:', e);
+    return 0;
   }
 }

@@ -5,7 +5,7 @@ import { TrickSystem } from './TrickSystem.js';
 import { InputManager, isTouchDevice } from './InputManager.js';
 import { TouchControls } from './TouchControls.js';
 import { SnowParticles } from './Particles.js';
-import { initFirebase, isFirebaseConfigured, submitScore, fetchWorldwideScores, getFirebaseAuth, createAccount, loginAccount, logoutAccount, resetPassword, onAuthChange, cloudSaveProgress, cloudLoadProgress, submitSummitScore, fetchSummitScores } from './firebase.js';
+import { initFirebase, isFirebaseConfigured, submitScore, fetchWorldwideScores, getFirebaseAuth, createAccount, loginAccount, logoutAccount, resetPassword, onAuthChange, cloudSaveProgress, cloudLoadProgress, submitSummitScore, fetchSummitScores, clearParkScores } from './firebase.js';
 import { NicknameManager } from './NicknameManager.js';
 import { QuestSystem } from './QuestSystem.js';
 import { ShopSystem } from './ShopSystem.js';
@@ -219,6 +219,8 @@ export class Game {
     // Firebase and nickname
     this.nicknameManager = new NicknameManager();
     this.firebaseDb = initFirebase();
+    // One-time park score reset (guarded by localStorage)
+    clearParkScores(this.firebaseDb);
     this.worldwideScores = [];
     this.activeLeaderboardTab = 'worldwide';
 
