@@ -2292,8 +2292,24 @@ export class Game {
 
   renderQuestList(tab) {
     this.quests.checkDailyReset();
+    this.quests.checkSeasonReset();
     const quests = tab === 'daily' ? this.quests.getDailyQuests() : this.quests.getSeasonQuests();
     this.ui.questXpLabel.textContent = `${this.quests.getTotalXP()} XP`;
+
+    // Show/hide season timer
+    const timerEl = document.getElementById('quest-season-timer');
+    if (timerEl) {
+      if (tab === 'season') {
+        const rem = this.quests.getSeasonTimeRemaining();
+        const parts = [];
+        if (rem.days > 0) parts.push(`${rem.days}D`);
+        parts.push(`${rem.hours}H ${rem.minutes}M`);
+        document.getElementById('quest-timer-value').textContent = parts.join(' ');
+        timerEl.style.display = '';
+      } else {
+        timerEl.style.display = 'none';
+      }
+    }
 
     this.ui.questList.innerHTML = quests.map(q => {
       const pct = Math.min((q.current / q.target) * 100, 100);

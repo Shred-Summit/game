@@ -554,6 +554,16 @@
       border-color: rgba(255,255,255,0.3);
     }
     .quest-tab:hover:not(.active) { color: rgba(255,255,255,0.6); }
+    .quest-season-timer {
+      margin-bottom: 8px;
+      font-size: 13px;
+      font-family: 'Bebas Neue', sans-serif;
+      color: rgba(255,255,255,0.45);
+      letter-spacing: 3px;
+    }
+    .quest-season-timer span {
+      color: rgba(255,255,255,0.7);
+    }
     .quest-xp-bar {
       margin-bottom: 16px;
       font-size: 16px;
@@ -2452,6 +2462,7 @@
         <button class="quest-tab active" data-tab="daily">DAILY</button>
         <button class="quest-tab" data-tab="season">SEASON</button>
       </div>
+      <div id="quest-season-timer" class="quest-season-timer" style="display:none">RESETS IN <span id="quest-timer-value">--</span></div>
       <div class="quest-xp-bar">
         <span id="quest-xp-label">0 XP</span>
       </div>

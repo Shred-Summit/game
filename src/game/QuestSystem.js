@@ -84,11 +84,14 @@ function getTodayString() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+const QUEST_CYCLE_DAYS = 30;
+
 export class QuestSystem {
   constructor() {
     this.onSave = null; // cloud save callback
     this.data = this.load();
     this.checkDailyReset();
+    this.checkSeasonReset();
 
     // Per-run tracking
     this.runGrabTypes = new Set();
@@ -115,10 +118,12 @@ export class QuestSystem {
       this.data = {
         dailyDate: data.dailyDate || '',
         dailyProgress: data.dailyProgress || [],
+        seasonStart: data.seasonStart || '',
         seasonProgress: data.seasonProgress || [],
         totalXP: data.totalXP || 0,
       };
       this.checkDailyReset();
+      this.checkSeasonReset();
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data)); } catch (e) { /* ignore */ }
     }
   }
@@ -128,6 +133,7 @@ export class QuestSystem {
     return {
       dailyDate: today,
       dailyProgress: this.generateDaily(today),
+      seasonStart: today,
       seasonProgress: SEASON_QUESTS.map(q => ({
         id: q.id, current: 0, target: q.target, completed: false,
       })),
@@ -142,6 +148,36 @@ export class QuestSystem {
       this.data.dailyProgress = this.generateDaily(today);
       this.save();
     }
+  }
+
+  checkSeasonReset() {
+    const today = getTodayString();
+    const seasonStart = this.data.seasonStart || today;
+    const startDate = new Date(seasonStart + 'T00:00:00');
+    const now = new Date(today + 'T00:00:00');
+    const daysSince = Math.floor((now - startDate) / (1000 * 60 * 60 * 24));
+
+    if (!this.data.seasonStart || daysSince >= QUEST_CYCLE_DAYS) {
+      this.data.seasonStart = today;
+      this.data.seasonProgress = SEASON_QUESTS.map(q => ({
+        id: q.id, current: 0, target: q.target, completed: false,
+      }));
+      this.save();
+    }
+  }
+
+  getSeasonTimeRemaining() {
+    const seasonStart = this.data.seasonStart || getTodayString();
+    const start = new Date(seasonStart + 'T00:00:00');
+    const end = new Date(start);
+    end.setDate(end.getDate() + QUEST_CYCLE_DAYS);
+    const now = new Date();
+    const diff = end - now;
+    if (diff <= 0) return { days: 0, hours: 0, minutes: 0 };
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    return { days, hours, minutes };
   }
 
   generateDaily(dateStr) {
