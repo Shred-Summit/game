@@ -668,6 +668,83 @@
     }
     #quests-back:hover { background: rgba(255,255,255,0.18); border-color: #fff; color: #fff; }
 
+    /* Scores panel */
+    #scores-panel {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(10,18,30,0.97);
+      z-index: 3;
+      padding-top: 40px;
+    }
+    #scores-panel.active { display: flex; }
+    #scores-panel h2 {
+      font-size: 48px;
+      font-family: 'Bebas Neue', sans-serif;
+      color: #fff;
+      letter-spacing: 6px;
+      margin-bottom: 16px;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    }
+    .scores-tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 8px;
+    }
+    .scores-tab {
+      padding: 8px 20px;
+      font-size: 14px;
+      font-family: 'Bebas Neue', sans-serif;
+      letter-spacing: 3px;
+      color: rgba(255,255,255,0.4);
+      background: none;
+      border: 1px solid rgba(255,255,255,0.1);
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s, background 0.2s;
+    }
+    .scores-tab:first-child { border-radius: 6px 0 0 6px; }
+    .scores-tab:last-child { border-radius: 0 6px 6px 0; }
+    .scores-tab.active {
+      color: #fff;
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.3);
+    }
+    .scores-tab:hover:not(.active) { color: rgba(255,255,255,0.6); }
+    .scores-label {
+      margin-bottom: 12px;
+      font-size: 13px;
+      font-family: 'Bebas Neue', sans-serif;
+      color: rgba(255,255,255,0.4);
+      letter-spacing: 3px;
+    }
+    .scores-list {
+      width: 90%;
+      max-width: 440px;
+      max-height: 55vh;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .scores-list::-webkit-scrollbar { width: 4px; }
+    .scores-list::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 2px; }
+    .scores-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+    #scores-back {
+      margin-top: 20px;
+      padding: 10px 36px;
+      font-size: 18px;
+      font-family: 'Bebas Neue', sans-serif;
+      letter-spacing: 3px;
+      color: rgba(255,255,255,0.7);
+      background: rgba(255,255,255,0.08);
+      border: 2px solid rgba(255,255,255,0.25);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    #scores-back:hover { background: rgba(255,255,255,0.18); border-color: #fff; color: #fff; }
+
     /* Map panel */
     #map-panel {
       display: none;
@@ -2152,6 +2229,10 @@
       /* Quests panel mobile */
       #quests-panel h2 { font-size: 36px; }
       .quest-list { max-height: 45vh; }
+      /* Scores panel mobile */
+      #scores-panel h2 { font-size: 36px; }
+      .scores-list { max-height: 45vh; }
+      .scores-tab { padding: 6px 12px; font-size: 13px; }
       /* Shop mobile */
       #shop-panel h2 { font-size: 36px; }
       #shop-item-list { width: 95%; }
@@ -2308,6 +2389,7 @@
       <div class="lobby-corner-btn" id="lobby-map">MAP</div>
       <div class="lobby-corner-btn" id="lobby-quests">QUESTS</div>
       <div class="lobby-corner-btn" id="lobby-ridepass">RIDE PASS</div>
+      <div class="lobby-corner-btn" id="lobby-scores">SCORES</div>
       <div class="lobby-corner-btn" id="lobby-account">ACCOUNT</div>
       <button id="lobby-logout">LOG OUT</button>
     </div>
@@ -2468,6 +2550,22 @@
       </div>
       <div id="quest-list" class="quest-list"></div>
       <button id="quests-back">BACK</button>
+    </div>
+
+    <!-- Scores panel (hidden until SCORES clicked) -->
+    <div id="scores-panel">
+      <h2>LEADERBOARDS</h2>
+      <div class="scores-tabs">
+        <button class="scores-tab active" data-scores-tab="park">PARK</button>
+        <button class="scores-tab" data-scores-tab="biggie">BIGGIE</button>
+        <button class="scores-tab" data-scores-tab="summit">SUMMIT</button>
+        <button class="scores-tab" data-scores-tab="peak">PEAK</button>
+      </div>
+      <div class="scores-label">ALL TIME — WORLDWIDE</div>
+      <div id="scores-list" class="scores-list"></div>
+      <div id="scores-loading" class="lb-loading">LOADING...</div>
+      <div id="scores-error" class="lb-error" style="display:none"></div>
+      <button id="scores-back">BACK</button>
     </div>
 
     <!-- Customize panel (hidden until CUSTOMIZE clicked) -->

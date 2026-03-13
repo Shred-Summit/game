@@ -196,16 +196,16 @@ export async function submitSummitScore(dbRef, nickname, score, chair, title = n
 export async function fetchSummitScores(dbRef, chair, maxResults = 20) {
   if (!dbRef) return null;
   try {
+    // Fetch all summit scores and filter client-side to avoid needing a composite index
     const q = query(
       collection(dbRef, 'summit_scores'),
-      where('chair', '==', chair),
       limit(500),
     );
     const snapshot = await getDocs(q);
     const scores = snapshot.docs.map(d => ({
       id: d.id,
       ...d.data(),
-    }));
+    })).filter(s => s.chair === chair);
     scores.sort((a, b) => b.score - a.score);
     return scores.slice(0, maxResults);
   } catch (e) {

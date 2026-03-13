@@ -151,6 +151,12 @@ export class Game {
       mapPanel: document.getElementById('map-panel'),
       mapBack: document.getElementById('map-back'),
       lobbyMap: document.getElementById('lobby-map'),
+      scoresPanel: document.getElementById('scores-panel'),
+      scoresBack: document.getElementById('scores-back'),
+      scoresList: document.getElementById('scores-list'),
+      scoresLoading: document.getElementById('scores-loading'),
+      scoresError: document.getElementById('scores-error'),
+      lobbyScores: document.getElementById('lobby-scores'),
       ridepassPanel: document.getElementById('ridepass-panel'),
       ridepassBack: document.getElementById('ridepass-back'),
       lobbyRidepass: document.getElementById('lobby-ridepass'),
@@ -762,6 +768,31 @@ export class Game {
         this.backcountryChair = chairId;
         this.ui.mapPanel.classList.remove('active');
         this.closeLobby();
+      });
+    });
+
+    // Scores button → open scores panel
+    this.activeScoresTab = 'park';
+    this.ui.lobbyScores.addEventListener('click', () => {
+      this.activeScoresTab = 'park';
+      document.querySelectorAll('.scores-tab').forEach(t =>
+        t.classList.toggle('active', t.dataset.scoresTab === 'park')
+      );
+      this.fetchAndRenderScores('park');
+      this.ui.scoresPanel.classList.add('active');
+    });
+    this.ui.scoresPanel.addEventListener('click', (e) => e.stopPropagation());
+    this.ui.scoresBack.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.ui.scoresPanel.classList.remove('active');
+    });
+    document.querySelectorAll('.scores-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        this.activeScoresTab = tab.dataset.scoresTab;
+        document.querySelectorAll('.scores-tab').forEach(t =>
+          t.classList.toggle('active', t.dataset.scoresTab === this.activeScoresTab)
+        );
+        this.fetchAndRenderScores(this.activeScoresTab);
       });
     });
 
@@ -1898,6 +1929,80 @@ export class Game {
 
     if (entries.length === 0) {
       container.innerHTML = '<div class="lb-loading">NO SCORES YET</div>';
+    }
+  }
+
+  async fetchAndRenderScores(tab) {
+    const db = this.firebaseDb;
+    const container = this.ui.scoresList;
+    container.innerHTML = '';
+    this.ui.scoresLoading.style.display = 'block';
+    this.ui.scoresError.style.display = 'none';
+
+    try {
+      let scores;
+      if (tab === 'park') {
+        scores = await fetchWorldwideScores(db, 20);
+      } else {
+        scores = await fetchSummitScores(db, tab, 20);
+      }
+
+      this.ui.scoresLoading.style.display = 'none';
+
+      if (scores === null) {
+        this.ui.scoresError.style.display = 'block';
+        this.ui.scoresError.textContent = 'OFFLINE — CHECK CONNECTION';
+        return;
+      }
+
+      if (scores.length === 0) {
+        this.ui.scoresError.style.display = 'block';
+        this.ui.scoresError.textContent = 'NO SCORES YET';
+        return;
+      }
+
+      scores.slice(0, 10).forEach((entry, i) => {
+        const div = document.createElement('div');
+        div.className = 'leaderboard-entry';
+
+        const rankSpan = document.createElement('span');
+        rankSpan.className = 'lb-rank';
+        if (i === 0) rankSpan.classList.add('gold');
+        else if (i === 1) rankSpan.classList.add('silver');
+        else if (i === 2) rankSpan.classList.add('bronze');
+        rankSpan.textContent = `#${i + 1}`;
+
+        const nameWrap = document.createElement('span');
+        nameWrap.className = 'lb-name';
+        const nameText = document.createElement('span');
+        nameText.textContent = entry.nickname || 'ANON';
+        nameWrap.appendChild(nameText);
+        if (entry.title) {
+          const titleSpan = document.createElement('span');
+          titleSpan.className = 'lb-title';
+          titleSpan.textContent = entry.title;
+          nameWrap.appendChild(titleSpan);
+        }
+
+        const scoreSpan = document.createElement('span');
+        scoreSpan.className = 'lb-score';
+        scoreSpan.textContent = entry.score.toLocaleString();
+
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'lb-label';
+        labelSpan.textContent = 'PTS';
+
+        div.appendChild(rankSpan);
+        div.appendChild(nameWrap);
+        div.appendChild(scoreSpan);
+        div.appendChild(labelSpan);
+        container.appendChild(div);
+      });
+    } catch (e) {
+      console.warn('Scores panel error:', e);
+      this.ui.scoresLoading.style.display = 'none';
+      this.ui.scoresError.style.display = 'block';
+      this.ui.scoresError.textContent = 'OFFLINE — CHECK CONNECTION';
     }
   }
 
