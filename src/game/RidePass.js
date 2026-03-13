@@ -96,6 +96,7 @@ export class RidePass {
   setData(data) {
     if (data && typeof data === 'object') {
       this.data = {
+        seasonStart: data.seasonStart || '',
         claimedLevels: data.claimedLevels || [],
         tokens: data.tokens || { steezeL1: 0, steezeL2: 0, steezeL3: 0, board: 0 },
         unlockedTitles: data.unlockedTitles || [],
@@ -107,6 +108,7 @@ export class RidePass {
 
   createFreshData() {
     return {
+      seasonStart: '',
       claimedLevels: [],
       tokens: { steezeL1: 0, steezeL2: 0, steezeL3: 0, board: 0 },
       unlockedTitles: [],
@@ -114,8 +116,9 @@ export class RidePass {
     };
   }
 
-  reset() {
+  reset(seasonStart) {
     this.data = this.createFreshData();
+    if (seasonStart) this.data.seasonStart = seasonStart;
     this.save();
   }
 

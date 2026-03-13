@@ -47,12 +47,9 @@ export class Game {
     this.tricks = new TrickSystem();
     this.quests = new QuestSystem();
     this.ridePass = new RidePass();
-    this.quests.onSeasonReset = () => this.ridePass.reset();
+    this.quests.onSeasonReset = () => this.ridePass.reset(this.quests.data.seasonStart);
     this.quests.checkSeasonReset();
-    // Fix: if season already reset totalXP but ride pass wasn't reset (timing issue)
-    if (this.quests.getTotalXP() === 0 && this.ridePass.data.claimedLevels.length > 0) {
-      this.ridePass.reset();
-    }
+    this.syncRidePassSeason();
     this.shop = new ShopSystem(this.ridePass);
     this.activeShopTab = 'jacket';
     this.particles = new SnowParticles(this.scene);
@@ -413,10 +410,7 @@ export class Game {
       if (cloudData.shop) this.shop.setData(cloudData.shop);
       if (cloudData.ridePass) this.ridePass.setData(cloudData.ridePass);
       if (cloudData.quests) this.quests.setData(cloudData.quests);
-      // Season reset may have zeroed XP — ensure ride pass matches
-      if (this.quests.getTotalXP() === 0 && this.ridePass.data.claimedLevels.length > 0) {
-        this.ridePass.reset();
-      }
+      this.syncRidePassSeason();
       if (cloudData.leaderboard) {
         this.leaderboard = cloudData.leaderboard;
         try { localStorage.setItem('shred-summit-leaderboard', JSON.stringify(this.leaderboard)); } catch (e) { /* ignore */ }
@@ -469,6 +463,13 @@ export class Game {
       leaderboard: this.leaderboard,
     };
     cloudSaveProgress(this.currentUser.uid, data);
+  }
+
+  syncRidePassSeason() {
+    const questSeason = this.quests.data.seasonStart;
+    if (questSeason && this.ridePass.data.seasonStart !== questSeason) {
+      this.ridePass.reset(questSeason);
+    }
   }
 
   startGame() {
