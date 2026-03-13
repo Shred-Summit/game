@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, query, where, limit, getDocs, serverTimestamp, doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, query, where, limit, getDocs, serverTimestamp, doc, setDoc, getDoc } from 'firebase/firestore';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getDatabase, ref as rtdbRef, set as rtdbSet, get as rtdbGet, onValue, onDisconnect, remove as rtdbRemove, update as rtdbUpdate, serverTimestamp as rtdbTimestamp } from 'firebase/database';
 
@@ -153,6 +153,9 @@ export async function submitScore(dbRef, nickname, score, title = null) {
   }
 }
 
+// Park scores submitted before this date are ignored (bug-abused scores)
+const PARK_RESET_EPOCH = new Date('2026-03-14T00:00:00Z');
+
 export async function fetchWorldwideScores(dbRef, maxResults = 20) {
   if (!dbRef) return null;
   try {
@@ -165,7 +168,12 @@ export async function fetchWorldwideScores(dbRef, maxResults = 20) {
     const scores = snapshot.docs.map(d => ({
       id: d.id,
       ...d.data(),
-    })).filter(s => !s.chair);
+    })).filter(s => {
+      if (s.chair) return false; // not a park score
+      // Ignore park scores before reset epoch
+      if (s.createdAt && s.createdAt.toDate && s.createdAt.toDate() < PARK_RESET_EPOCH) return false;
+      return true;
+    });
     scores.sort((a, b) => b.score - a.score);
     return scores.slice(0, maxResults);
   } catch (e) {
@@ -213,25 +221,3 @@ export async function fetchSummitScores(dbRef, chair, maxResults = 20) {
   }
 }
 
-// ---- ONE-TIME CLEANUP: delete all park scores (no chair field) ----
-export async function clearParkScores(dbRef) {
-  if (!dbRef) return 0;
-  const GUARD = 'shred-park-scores-cleared-v1';
-  if (localStorage.getItem(GUARD)) return -1; // already ran
-  try {
-    const q = query(collection(dbRef, 'scores'), limit(500));
-    const snapshot = await getDocs(q);
-    const parkDocs = snapshot.docs.filter(d => !d.data().chair);
-    let deleted = 0;
-    for (const d of parkDocs) {
-      await deleteDoc(doc(dbRef, 'scores', d.id));
-      deleted++;
-    }
-    localStorage.setItem(GUARD, Date.now().toString());
-    console.log(`[clearParkScores] Deleted ${deleted} park scores`);
-    return deleted;
-  } catch (e) {
-    console.warn('clearParkScores failed:', e);
-    return 0;
-  }
-}
