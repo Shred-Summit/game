@@ -92,7 +92,6 @@ export class QuestSystem {
     this.onSeasonReset = null; // called when season resets (to reset ride pass)
     this.data = this.load();
     this.checkDailyReset();
-    this.checkSeasonReset();
 
     // Per-run tracking
     this.runGrabTypes = new Set();

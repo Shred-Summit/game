@@ -48,6 +48,11 @@ export class Game {
     this.quests = new QuestSystem();
     this.ridePass = new RidePass();
     this.quests.onSeasonReset = () => this.ridePass.reset();
+    this.quests.checkSeasonReset();
+    // Fix: if season already reset totalXP but ride pass wasn't reset (timing issue)
+    if (this.quests.getTotalXP() === 0 && this.ridePass.data.claimedLevels.length > 0) {
+      this.ridePass.reset();
+    }
     this.shop = new ShopSystem(this.ridePass);
     this.activeShopTab = 'jacket';
     this.particles = new SnowParticles(this.scene);
