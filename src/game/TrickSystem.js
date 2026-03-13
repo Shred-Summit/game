@@ -242,7 +242,7 @@ export class TrickSystem {
       } else if (isMisty) {
         offAxisName = this.getMistyName(totalDeg, this.flipCount, spinDir);
       } else {
-        offAxisName = this.getCorkName(this.spinCount * 180, this.flipCount, spinDir);
+        offAxisName = this.getCorkName(totalDeg, this.flipCount, spinDir);
       }
       tricks.push(this.wasOnRailBeforeAir ? offAxisName + ' OFF' : offAxisName);
       // 2x points for all off-axis tricks (cork, rodeo, misty)
