@@ -1339,27 +1339,7 @@ export class Player {
       if (Math.abs(dx) < ramp.width + this.capsuleRadius &&
           Math.abs(dz) < ramp.length / 2 + 0.5) {
 
-        if (this.grounded && dy < 0.5) {
-          // Grounded player hitting rail — auto-hop onto it
-          this.position.y = railTop + 0.2;
-          this.velocity.y = 0;
-          this.grinding = true;
-          this.grindAborted = false;
-          this.grindRail = ramp;
-          this.grounded = false;
-          this.peakHeight = 0;
-          this.grindTime = 0;
-          this.frontswapCount = 0;
-          if (this.equipmentType === 'ski') {
-            // Skis can't 50-50 — default to frontside boardslide
-            this.boardslideType = 'frontside';
-            this.boardslideAngle = Math.PI / 2;
-          } else {
-            this.boardslideType = null;
-            this.boardslideAngle = 0;
-          }
-          break;
-        } else if (!this.grounded && this.velocity.y <= 0 &&
+        if (!this.grounded && this.velocity.y <= 0 &&
                    dy > -1.0 && dy < 3.0) {
           // Airborne descending player — snap onto rail (generous catch window)
           // Must be within 20° of level (no headslides)
