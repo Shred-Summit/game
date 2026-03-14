@@ -55,6 +55,20 @@
       transition: opacity 0.2s;
     }
 
+    #aurora-multiplier {
+      position: absolute;
+      top: 90px; right: 32px;
+      font-size: 16px;
+      font-weight: 700;
+      opacity: 0;
+      transition: opacity 0.3s, text-shadow 0.3s;
+      background: linear-gradient(90deg, #40ff80, #8060ff, #40c0c0);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 2px 8px rgba(100, 255, 160, 0.5));
+    }
+
     /* Landing announcement container */
     #landing-announce {
       position: absolute;
@@ -894,6 +908,7 @@
     .map-chair-dot.blue { background: #2196f3; }
     .map-chair-dot.black { background: #333; }
     .map-chair-dot.red { background: #e53935; }
+    .map-chair-dot.purple { background: #9c27b0; }
     /* Trail difficulty labels */
     .map-trail-tag {
       font-family: 'Inter', sans-serif;
@@ -2335,6 +2350,7 @@
       #score-display { font-size: 26px; top: 16px; right: 16px; }
       #score-label { top: 6px; right: 16px; font-size: 9px; }
       #combo-display { top: 48px; right: 16px; font-size: 14px; }
+      #aurora-multiplier { top: 66px; right: 16px; font-size: 12px; }
       #checkpoint-display { top: 16px; left: 16px; font-size: 12px; }
 
       #speed-display { bottom: 130px; left: 16px; font-size: 22px; }
@@ -2402,6 +2418,7 @@
     <div id="score-label">SCORE</div>
     <div id="score-display">0</div>
     <div id="combo-display"></div>
+    <div id="aurora-multiplier"></div>
     <div id="jump-height"><span id="jump-height-value">0</span> <span class="unit">FT</span></div>
     <div id="landing-announce">
       <div id="stomped-label">STOMPED!</div>
@@ -2546,25 +2563,39 @@
 
           <div class="map-summit-marker">&#9650; SHRED SUMMIT — 3,200m</div>
 
-          <div class="map-chair" data-chair="peak" style="left: 50%; top: 8%; transform: translateX(-50%);">
+          <div class="map-chair" data-chair="peak" style="left: 50%; top: 4%; transform: translateX(-50%);">
             <div class="map-chair-dot red"></div>
-            <div class="map-chair-line" style="height: 120px;"></div>
+            <div class="map-chair-line" style="height: 80px;"></div>
             <div class="map-chair-label">PEAK CHAIR</div>
             <div class="map-trail-tag">EXPERT ONLY</div>
           </div>
 
-          <div class="map-chair" data-chair="summit" style="left: 22%; top: 25%;">
+          <div class="map-chair" data-chair="summit" style="left: 18%; top: 16%;">
             <div class="map-chair-dot black"></div>
-            <div class="map-chair-line" style="height: 140px;"></div>
+            <div class="map-chair-line" style="height: 80px;"></div>
             <div class="map-chair-label">SUMMIT CHAIR</div>
             <div class="map-trail-tag">ADVANCED</div>
           </div>
 
-          <div class="map-chair" data-chair="biggie" style="left: 68%; top: 28%;">
+          <div class="map-chair" data-chair="biggie" style="left: 68%; top: 16%;">
             <div class="map-chair-dot blue"></div>
-            <div class="map-chair-line" style="height: 130px;"></div>
+            <div class="map-chair-line" style="height: 80px;"></div>
             <div class="map-chair-label">BIGGIE CHAIR</div>
             <div class="map-trail-tag">INTERMEDIATE</div>
+          </div>
+
+          <div class="map-chair" data-chair="oldgrowth" style="left: 15%; top: 34%;">
+            <div class="map-chair-dot green"></div>
+            <div class="map-chair-line" style="height: 80px;"></div>
+            <div class="map-chair-label">OLD GROWTH CHAIR</div>
+            <div class="map-trail-tag">EXPERT</div>
+          </div>
+
+          <div class="map-chair" data-chair="moonlight" style="left: 65%; top: 34%;">
+            <div class="map-chair-dot purple"></div>
+            <div class="map-chair-line" style="height: 80px;"></div>
+            <div class="map-chair-label">MOONLIGHT CHAIR</div>
+            <div class="map-trail-tag">ADVANCED</div>
           </div>
 
           <div class="map-lodge">BASE LODGE</div>
@@ -2588,6 +2619,16 @@
             <div class="park-card-name">X-GAMES PARK</div>
             <div class="park-card-desc">Massive 200ft booters, 4x thick rails, donkey dicks &amp; waterfalls</div>
             <div class="park-card-difficulty" style="color:#e53935;">&#9679; EXPERT ONLY</div>
+          </div>
+          <div class="park-card" data-park="street">
+            <div class="park-card-name">HEAVY METAL STREET</div>
+            <div class="park-card-desc">Urban stair sets, concrete ledges &amp; handrails — city vibes</div>
+            <div class="park-card-difficulty" style="color:#2196f3;">&#9679; INTERMEDIATE</div>
+          </div>
+          <div class="park-card" data-park="slopestyle">
+            <div class="park-card-name">SLOPESTYLE COURSE</div>
+            <div class="park-card-desc">Competition layout — progressive features to 250ft finale booter</div>
+            <div class="park-card-difficulty" style="color:#ff9800;">&#9679; ADVANCED</div>
           </div>
         </div>
       </div>
@@ -2643,6 +2684,7 @@
         <button class="scores-tab" data-scores-tab="biggie">BIGGIE</button>
         <button class="scores-tab" data-scores-tab="summit">SUMMIT</button>
         <button class="scores-tab" data-scores-tab="peak">PEAK</button>
+        <button class="scores-tab" data-scores-tab="moonlight">MOONLIGHT</button>
       </div>
       <div class="scores-label">ALL TIME — WORLDWIDE</div>
       <div id="scores-list" class="scores-list"></div>
