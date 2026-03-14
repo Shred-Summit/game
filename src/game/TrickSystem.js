@@ -7,6 +7,7 @@ export class TrickSystem {
     this.lastTrickName = '';
     this.lastTrickPoints = 0;
     this.lastTrickTime = 0;
+    this.auroraMultiplier = 1.0; // set by Game.js for Moonlight Ridge
 
     this.spinCount = 0;
     this.flipCount = 0;
@@ -306,6 +307,10 @@ export class TrickSystem {
         trickScore = Math.floor(trickScore * 1.5);
         tricks.unshift('SWITCH');
       }
+      // Aurora multiplier (Moonlight Ridge)
+      if (this.auroraMultiplier > 1.0) {
+        trickScore = Math.floor(trickScore * this.auroraMultiplier);
+      }
       this.totalScore += trickScore;
       this.lastTrickName = tricks.join(' + ');
       this.lastTrickPoints = trickScore;
@@ -382,6 +387,10 @@ export class TrickSystem {
       this.spinOnName = tricks.join(' + ');
       this.spinOnPoints = trickScore;
 
+      // Aurora multiplier (Moonlight Ridge)
+      if (this.auroraMultiplier > 1.0) {
+        trickScore = Math.floor(trickScore * this.auroraMultiplier);
+      }
       // Show the spin-on immediately as a trick
       this.totalScore += trickScore;
       this.lastTrickName = this.spinOnName;
@@ -466,6 +475,10 @@ export class TrickSystem {
       if (this.grindStartedSwitch) {
         trickScore = Math.floor(trickScore * 1.5);
         tricks.unshift('SWITCH');
+      }
+      // Aurora multiplier (Moonlight Ridge)
+      if (this.auroraMultiplier > 1.0) {
+        trickScore = Math.floor(trickScore * this.auroraMultiplier);
       }
       this.totalScore += trickScore;
 

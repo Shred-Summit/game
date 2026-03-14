@@ -98,6 +98,9 @@ export class Player {
     this.daveWaypoints = [];     // escape path waypoints
     this.daveWaypointIndex = 0;
 
+    // Surface type (Alpine Meadow / Moonlight Ridge)
+    this.surfaceType = 'snow'; // 'snow', 'grass', 'mud', 'creek', 'ice'
+
     // Capsule hitbox: center = position, radius, half-height
     this.capsuleRadius = 0.4;
     this.capsuleHalfH = 0.8;
@@ -464,6 +467,30 @@ export class Player {
     this.kickerCooldown = Math.max(0, this.kickerCooldown - dt);
     this.terrainPopCooldown = Math.max(0, this.terrainPopCooldown - dt);
 
+    // ===== SURFACE TYPE QUERY =====
+    if (this.grounded && terrain.config && terrain.config.frozenCreeks) {
+      // Moonlight Ridge: check frozen creeks first for ice physics
+      let onIce = false;
+      for (const fc of terrain.config.frozenCreeks) {
+        if (this.position.z < fc.startZ && this.position.z > fc.endZ) {
+          const t = (fc.startZ - this.position.z) / (fc.startZ - fc.endZ);
+          const pathIdx = t * (fc.xPath.length - 1);
+          const i0 = Math.floor(pathIdx);
+          const i1 = Math.min(i0 + 1, fc.xPath.length - 1);
+          const frac = pathIdx - i0;
+          const cx = fc.xPath[i0] * (1 - frac) + fc.xPath[i1] * frac;
+          if (Math.abs(this.position.x - cx) < fc.halfWidth * 1.5) { onIce = true; break; }
+        }
+      }
+      this.surfaceType = onIce ? 'ice' : 'snow';
+    } else if (this.grounded && terrain.getSurfaceType) {
+      this.surfaceType = terrain.getSurfaceType(this.position.x, this.position.z);
+    } else if (!this.grounded) {
+      // Keep last surface type while airborne (for particle effects)
+    } else {
+      this.surfaceType = 'snow';
+    }
+
     // ===== EFFECTIVE SURFACE HEIGHT =====
     // Includes kicker surfaces — player rides up ramps naturally
     const surfaceH = this.getSurfaceHeight(terrain);
@@ -717,13 +744,24 @@ export class Player {
       // Carving: turning at speed creates a slight speed scrub (edge friction)
       const carveFriction = 1.0 - Math.abs(this.turnRate) * 0.012;
 
-      // Standard friction
+      // Standard friction — modified by surface type
       let frictionMul;
       if (input.brake) {
         frictionMul = 0.94;
         this.turnRate *= 0.90;
       } else {
-        frictionMul = this.isTucking ? 0.998 : 0.995;
+        let baseFriction = this.isTucking ? 0.998 : 0.995;
+        if (this.surfaceType === 'grass') {
+          baseFriction = this.isTucking ? 0.985 : 0.975;
+        } else if (this.surfaceType === 'mud') {
+          baseFriction = 0.92;
+        } else if (this.surfaceType === 'creek') {
+          baseFriction = 0.88;
+        } else if (this.surfaceType === 'ice') {
+          baseFriction = this.isTucking ? 0.999 : 0.998;
+          this.turnRate *= 0.7; // harder to turn on ice
+        }
+        frictionMul = baseFriction;
       }
       this.velocity.x *= frictionMul * carveFriction;
       this.velocity.z *= frictionMul * carveFriction;
@@ -968,7 +1006,7 @@ export class Player {
       // Shift = tuck in air → 1.5x faster spins/flips/corks
       // Flat ground ollie → 1.5x slower rotation (no flip-worthy air without a kicker)
       const tuckMul = (input.tuck || input.grab) ? 1.5 : 1.0;
-      const flatMul = this.launchedFromKicker ? 1.0 : 0.5;
+      const flatMul = this.launchedFromKicker ? 1.0 : 0.83;
       const flipTarget = 6.0 * tuckMul * flatMul;     // target flip angular vel
       const spinTarget = 6.5 * tuckMul * flatMul;     // target spin angular vel
       const rampUp = 14.0 * tuckMul * flatMul;        // how fast rotation builds (rad/s²)
@@ -2003,6 +2041,7 @@ export class Player {
       grindAborted: this.grindAborted,
       inRiver: this.inRiver,
       daveRescuing: this.daveRescuing,
+      surfaceType: this.surfaceType,
     };
   }
 }

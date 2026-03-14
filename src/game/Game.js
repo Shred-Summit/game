@@ -38,7 +38,11 @@ export class Game {
     this.terrain = new Terrain(this.scene);
     this.parkTerrain = this.terrain; // keep reference to default park terrain
     this.gameMode = 'park';          // 'park' | 'backcountry'
-    this.backcountryChair = null;    // 'summit', 'biggie', 'peak'
+    this.backcountryChair = null;    // 'summit', 'biggie', 'peak', 'moonlight'
+    this.auroraIntensity = 0;        // 0=dark moonlit, 1=full aurora
+    this.auroraActive = false;       // true when playing Moonlight Ridge
+    this.auroraMultiplier = 1.0;     // score multiplier from aurora (1.0–7.5)
+    this.auroraMesh = null;          // sky aurora visual
     this.parkId = 'big-white';       // 'big-white', 'woodward', 'xgames'
     this.selectedEquipment = 'snowboard';
     this.selectedStance = 'regular';
@@ -101,6 +105,7 @@ export class Game {
     this.ui = {
       score: document.getElementById('score-display'),
       combo: document.getElementById('combo-display'),
+      auroraMultiplier: document.getElementById('aurora-multiplier'),
       landingAnnounce: document.getElementById('landing-announce'),
       stompedLabel: document.getElementById('stomped-label'),
       trickName: document.getElementById('trick-name'),
@@ -542,6 +547,124 @@ export class Game {
     const rim = new THREE.DirectionalLight(0xaaccee, 0.3);
     rim.position.set(-20, 20, -10);
     this.scene.add(rim);
+  }
+
+  createAuroraMesh() {
+    if (this.auroraMesh) {
+      this.scene.remove(this.auroraMesh);
+      this.auroraMesh.geometry.dispose();
+      this.auroraMesh.material.dispose();
+      this.auroraMesh = null;
+    }
+
+    const vertexShader = `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+
+    const fragmentShader = `
+      uniform float uTime;
+      uniform float uIntensity;
+      varying vec2 vUv;
+
+      float band(float y, float center, float width, float softness) {
+        return smoothstep(center - width - softness, center - width, y)
+             * (1.0 - smoothstep(center + width, center + width + softness, y));
+      }
+
+      void main() {
+        float x = vUv.x;
+        float y = vUv.y;
+
+        // Curtain-like warp: multiple frequencies for realistic undulation
+        float drift = sin(x * 2.5 + uTime * 0.25) * 0.08
+                    + sin(x * 6.0 - uTime * 0.4) * 0.04
+                    + sin(x * 11.0 + uTime * 0.7) * 0.02;
+
+        // Vertical streaks (aurora curtain effect)
+        float streak = 0.7 + 0.3 * sin(x * 20.0 + y * 3.0 + uTime * 0.15);
+
+        // Build aurora bands — wide, overlapping, curtain-like
+        float b1 = band(y + drift, 0.30, 0.10, 0.12)
+                  * (0.6 + 0.4 * sin(x * 4.0 + uTime * 0.3)) * streak;
+        float b2 = band(y - drift * 0.8, 0.50, 0.08, 0.14)
+                  * (0.5 + 0.5 * sin(x * 6.0 - uTime * 0.5)) * streak;
+        float b3 = band(y + drift * 1.2, 0.68, 0.07, 0.10)
+                  * (0.5 + 0.5 * sin(x * 3.0 + uTime * 0.2)) * streak;
+        float b4 = band(y - drift * 0.6, 0.18, 0.06, 0.08)
+                  * (0.6 + 0.4 * sin(x * 5.0 + uTime * 0.35));
+        float b5 = band(y + drift * 0.9, 0.42, 0.06, 0.11)
+                  * (0.5 + 0.5 * sin(x * 7.0 - uTime * 0.4)) * streak;
+
+        // Color: vivid greens dominate, with purple and blue accents
+        vec3 c1 = vec3(0.05, 1.0, 0.3) * b1;   // bright green
+        vec3 c2 = vec3(0.5, 0.1, 0.9) * b2;     // purple
+        vec3 c3 = vec3(0.1, 0.85, 0.5) * b3;    // green-teal
+        vec3 c4 = vec3(0.7, 0.15, 0.6) * b4;    // magenta-pink
+        vec3 c5 = vec3(0.15, 0.7, 0.9) * b5;    // cyan
+
+        vec3 col = c1 + c2 + c3 + c4 + c5;
+
+        // Boost overall vibrancy
+        col *= 1.5;
+
+        // Vertical fade: transparent at bottom, fade top
+        float vFade = smoothstep(0.0, 0.1, y) * smoothstep(1.0, 0.8, y);
+
+        // Horizontal fade at edges
+        float hFade = smoothstep(0.0, 0.08, x) * smoothstep(1.0, 0.92, x);
+
+        float alpha = length(col) * 0.6 * vFade * hFade * uIntensity;
+        col *= uIntensity;
+
+        gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.9));
+      }
+    `;
+
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uIntensity: { value: 0 },
+      },
+      vertexShader,
+      fragmentShader,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+
+    // Curved sky plane — cylinder segment above and behind the player
+    const geo = new THREE.PlaneGeometry(600, 200, 64, 32);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      // Curve into a dome arc
+      const angle = (x / 600) * Math.PI * 0.8; // ~144 degree arc
+      const radius = 400;
+      pos.setX(i, Math.sin(angle) * radius);
+      pos.setZ(i, -Math.cos(angle) * radius + radius * 0.3);
+      pos.setY(i, y + 180); // push high up
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+
+    this.auroraMesh = new THREE.Mesh(geo, material);
+    this.auroraMesh.renderOrder = -1; // render behind everything
+    this.auroraMesh.frustumCulled = false;
+    this.scene.add(this.auroraMesh);
+  }
+
+  disposeAuroraMesh() {
+    if (this.auroraMesh) {
+      this.scene.remove(this.auroraMesh);
+      this.auroraMesh.geometry.dispose();
+      this.auroraMesh.material.dispose();
+      this.auroraMesh = null;
+    }
   }
 
   setupLobby() {
@@ -1082,9 +1205,37 @@ export class Game {
       this.terrain.dispose();
     }
 
+    // Reset atmosphere from previous chair
+    if (this.auroraActive) {
+      this.auroraActive = false;
+      this.auroraIntensity = 0;
+      this.auroraMultiplier = 1.0;
+      this.disposeAuroraMesh();
+    }
+    this.scene.background = new THREE.Color(0x8aafc4);
+    this.scene.fog.color.set(0xbccfe0);
+    this.scene.fog.density = 0.003;
+    this.sun.intensity = 1.6;
+    this.sun.color.set(0xfff4e0);
+    this.sun.position.set(30, 50, 20);
+
     if (this.gameMode === 'backcountry') {
       console.log('[swapTerrain] Creating BackcountryTerrain');
       this.terrain = new BackcountryTerrain(this.scene, this.backcountryChair);
+
+      // Chair-specific atmosphere
+      if (this.backcountryChair === 'moonlight') {
+        this.auroraActive = true;
+        this.auroraIntensity = 0;
+        this.auroraMultiplier = 1.0;
+        this.scene.background = new THREE.Color(0x0a0e1a);
+        this.scene.fog.color.set(0x0a0e1a);
+        this.scene.fog.density = 0.012;
+        this.sun.intensity = 0.2;
+        this.sun.color.set(0x8888cc);
+        this.sun.position.set(-20, 60, 10);
+        this.createAuroraMesh();
+      }
     } else {
       console.log('[swapTerrain] Creating Park Terrain, parkId:', this.parkId);
       const seed = this.multiplayer.active ? this.multiplayer.terrainSeed : null;
@@ -1699,6 +1850,49 @@ export class Game {
         this.multiplayer.updateRemotePlayers(dt, this.camera);
       }
 
+      // Aurora system — Moonlight Ridge
+      if (this.auroraActive && this.terrain.config.aurora) {
+        const acfg = this.terrain.config.aurora;
+        // Trick landing triggers brightness flare + multiplier bump
+        const timeSinceLastTrick = performance.now() - trickState.lastTrickTime;
+        if (trickState.lastTrickTime > 0 && timeSinceLastTrick < 200) {
+          this.auroraIntensity = Math.min(acfg.maxBrightness,
+            this.auroraIntensity + acfg.flareRate * dt * 5);
+          // Bump multiplier on trick landing (detected once per trick)
+          if (!this._lastAuroraTrickTime || this._lastAuroraTrickTime !== trickState.lastTrickTime) {
+            this._lastAuroraTrickTime = trickState.lastTrickTime;
+            this.auroraMultiplier = Math.min(7.5, this.auroraMultiplier + 0.5);
+          }
+        }
+        // Decay intensity over time without tricks
+        this.auroraIntensity = Math.max(0, this.auroraIntensity - acfg.decayRate * dt);
+        // Decay multiplier slowly when not tricking
+        if (this.auroraMultiplier > 1.0 && timeSinceLastTrick > 3000) {
+          this.auroraMultiplier = Math.max(1.0, this.auroraMultiplier - 0.3 * dt);
+        }
+        // Feed multiplier to trick system
+        this.tricks.auroraMultiplier = this.auroraMultiplier;
+
+        // Apply to scene atmosphere
+        const t = this.auroraIntensity;
+        this.scene.fog.density = acfg.baseFogDensity + (acfg.litFogDensity - acfg.baseFogDensity) * t;
+        this.sun.intensity = acfg.baseAmbient + (acfg.litAmbient - acfg.baseAmbient) * t;
+        const r = 0.04 + t * 0.03;
+        const g = 0.06 + t * 0.12;
+        const b = 0.10 + t * 0.06;
+        this.scene.background.setRGB(r, g, b);
+        this.scene.fog.color.setRGB(r, g, b);
+
+        // Update aurora sky visual
+        if (this.auroraMesh) {
+          this.auroraMesh.material.uniforms.uTime.value += dt;
+          this.auroraMesh.material.uniforms.uIntensity.value = t;
+          // Follow player position so aurora stays overhead
+          this.auroraMesh.position.x = this.player.position.x;
+          this.auroraMesh.position.z = this.player.position.z - 50;
+        }
+      }
+
       // UI
       this.updateUI(trickState, playerState);
     } else if (this.state === 'dead' || this.state === 'finished') {
@@ -2075,6 +2269,9 @@ export class Game {
     this.quests.onRunStart();
     this.tricks.comboMultiplier = 1;
     this.tricks.comboTimer = 0;
+    this.tricks.auroraMultiplier = 1.0;
+    this.auroraMultiplier = 1.0;
+    this._lastAuroraTrickTime = 0;
 
     // Backcountry: reset terrain so chunks at start are loaded
     if (this.gameMode === 'backcountry' && this.terrain.reset) {
@@ -3174,6 +3371,17 @@ export class Game {
       this.ui.combo.textContent = `${trickState.combo.toFixed(1)}x COMBO`;
     } else {
       this.ui.combo.style.opacity = '0';
+    }
+
+    // Aurora multiplier (Moonlight Ridge)
+    if (this.auroraActive && this.auroraMultiplier > 1.0) {
+      this.ui.auroraMultiplier.style.opacity = '1';
+      this.ui.auroraMultiplier.textContent = `AURORA ${this.auroraMultiplier.toFixed(1)}x`;
+      // Glow intensity scales with multiplier
+      const glow = Math.min((this.auroraMultiplier - 1) / 6.5, 1);
+      this.ui.auroraMultiplier.style.filter = `drop-shadow(0 2px ${8 + glow * 16}px rgba(100, 255, 160, ${0.3 + glow * 0.5}))`;
+    } else {
+      this.ui.auroraMultiplier.style.opacity = '0';
     }
 
     // Jump height (show while airborne)
