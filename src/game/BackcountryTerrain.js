@@ -820,9 +820,10 @@ const CHAIRS = {
 };
 
 export class BackcountryTerrain {
-  constructor(scene, chairId) {
+  constructor(scene, chairId, nightMode = false) {
     this.scene = scene;
     this.chairId = chairId;
+    this.nightMode = nightMode;
     this.config = CHAIRS[chairId];
     if (!this.config) throw new Error(`Unknown chair: ${chairId}`);
 
@@ -893,6 +894,14 @@ export class BackcountryTerrain {
     this.snagMaterial = new THREE.MeshStandardMaterial({
       color: 0x2a2220, roughness: 1.0, flatShading: true, // charred/weathered
     });
+
+    // Night mode: slight blue tint for non-moonlight backcountry chairs
+    if (nightMode && chairId !== 'moonlight') {
+      this.snowMaterial.color.set(0xb8c8dd);
+      this.rockMaterial.color.set(0x506070);
+      this.treeMaterial.color.set(0x122812);
+      this.darkTreeMaterial.color.set(0x0c1e0c);
+    }
 
     // River zones — populated during chunk generation for collision detection
     this.riverZones = [];

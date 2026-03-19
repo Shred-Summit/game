@@ -1497,6 +1497,15 @@
       padding: 6px 14px; cursor: pointer; transition: all 0.15s;
     }
     .account-inline-btn:hover { color: #fff; border-color: #fff; background: rgba(255,255,255,0.15); }
+    .account-toggle-btn {
+      font-family: 'Bebas Neue', sans-serif; font-size: 20px;
+      letter-spacing: 3px; color: #fff; background: rgba(255,255,255,0.1);
+      border: 2px solid rgba(255,255,255,0.3); border-radius: 6px;
+      padding: 8px 28px; cursor: pointer; transition: all 0.2s; min-width: 120px;
+    }
+    .account-toggle-btn:hover { border-color: #ffc107; color: #ffc107; }
+    .account-toggle-btn.mode-day { border-color: #ffaa00; color: #ffcc33; background: rgba(255,200,0,0.1); }
+    .account-toggle-btn.mode-night { border-color: #4488cc; color: #66aaee; background: rgba(50,100,200,0.1); }
     #account-nickname-error {
       font-family: 'Bebas Neue', sans-serif; font-size: 12px;
       color: #ff5252; letter-spacing: 1px; margin-top: 4px; min-height: 16px;
@@ -2780,6 +2789,13 @@
       <div class="account-row">
         <label>TITLE</label>
         <div class="account-title-section" id="account-title-options"></div>
+      </div>
+      <div class="account-row">
+        <label>DAY / NIGHT VISUALS</label>
+        <div class="account-edit-row">
+          <button class="account-toggle-btn" id="daynight-toggle">AUTO</button>
+        </div>
+        <span style="font-size:11px; color:rgba(255,255,255,0.3); margin-top:4px; letter-spacing:1px;">AUTO = REAL CLOCK &middot; DAY = ALWAYS DAY &middot; NIGHT = ALWAYS NIGHT</span>
       </div>
       <button id="account-logout-btn">LOG OUT</button>
       <button id="account-back">BACK</button>

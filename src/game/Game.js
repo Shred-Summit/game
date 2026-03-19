@@ -43,6 +43,10 @@ export class Game {
     this.auroraActive = false;       // true when playing Moonlight Ridge
     this.auroraMultiplier = 1.0;     // score multiplier from aurora (1.0–7.5)
     this.auroraMesh = null;          // sky aurora visual
+    this.nightMode = false;          // true when local clock says night
+    this.nightBlend = 0;             // 0=day, 1=full night (for dawn/dusk lerp)
+    this.starField = null;           // night sky stars (backcountry only)
+    this.daynightPref = localStorage.getItem('shred-daynight') || 'auto'; // 'auto' | 'day' | 'night'
     this.parkId = 'big-white';       // 'big-white', 'woodward', 'xgames'
     this.selectedEquipment = 'snowboard';
     this.selectedStance = 'regular';
@@ -149,6 +153,7 @@ export class Game {
       accountNicknameError: document.getElementById('account-nickname-error'),
       accountTitleOptions: document.getElementById('account-title-options'),
       accountLogoutBtn: document.getElementById('account-logout-btn'),
+      daynightToggle: document.getElementById('daynight-toggle'),
       shopItemList: document.getElementById('shop-item-list'),
       shopS1Count: document.getElementById('shop-s1-count'),
       shopS2Count: document.getElementById('shop-s2-count'),
@@ -523,8 +528,8 @@ export class Game {
   }
 
   initLights() {
-    const ambient = new THREE.AmbientLight(0x8ec8f0, 0.5);
-    this.scene.add(ambient);
+    this.ambientLight = new THREE.AmbientLight(0x8ec8f0, 0.5);
+    this.scene.add(this.ambientLight);
 
     this.sun = new THREE.DirectionalLight(0xfff4e0, 1.6);
     this.sun.position.set(30, 50, 20);
@@ -541,12 +546,12 @@ export class Game {
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
 
-    const hemi = new THREE.HemisphereLight(0x87ceeb, 0xd0e8f0, 0.5);
-    this.scene.add(hemi);
+    this.hemiLight = new THREE.HemisphereLight(0x87ceeb, 0xd0e8f0, 0.5);
+    this.scene.add(this.hemiLight);
 
-    const rim = new THREE.DirectionalLight(0xaaccee, 0.3);
-    rim.position.set(-20, 20, -10);
-    this.scene.add(rim);
+    this.rimLight = new THREE.DirectionalLight(0xaaccee, 0.3);
+    this.rimLight.position.set(-20, 20, -10);
+    this.scene.add(this.rimLight);
   }
 
   createAuroraMesh() {
@@ -684,6 +689,366 @@ export class Game {
       this.auroraMesh.geometry.dispose();
       this.auroraMesh.material.dispose();
       this.auroraMesh = null;
+    }
+  }
+
+  // ===== DAY/NIGHT CYCLE =====
+
+  getTimeOfDay() {
+    const now = new Date();
+    const decimal = now.getHours() + now.getMinutes() / 60;
+    // Night: 6:30pm – 5:30am (full dark)
+    // Dusk:  5:30pm – 6:30pm (transition)
+    // Dawn:  5:30am – 6:30am (transition)
+    // Day:   6:30am – 5:30pm
+    if (decimal >= 18.5 || decimal < 5.5) return 1.0;        // full night
+    if (decimal >= 17.5 && decimal < 18.5) return (decimal - 17.5);  // dusk: 0→1
+    if (decimal >= 5.5 && decimal < 6.5) return 1.0 - (decimal - 5.5); // dawn: 1→0
+    return 0.0; // day
+  }
+
+  updateDaynightButton() {
+    const btn = this.ui.daynightToggle;
+    if (!btn) return;
+    btn.textContent = this.daynightPref.toUpperCase();
+    btn.className = 'account-toggle-btn';
+    if (this.daynightPref === 'day') btn.classList.add('mode-day');
+    if (this.daynightPref === 'night') btn.classList.add('mode-night');
+  }
+
+  applyNightAtmosphere() {
+    const t = this.nightBlend;
+    if (t <= 0) return;
+
+    if (this.gameMode === 'park') {
+      // Park night: darker tinted sky, floodlights keep snow bright
+      const bg = new THREE.Color(0x8aafc4).lerp(new THREE.Color(0x2a3a50), t);
+      this.scene.background.copy(bg);
+      const fogC = new THREE.Color(0xbccfe0).lerp(new THREE.Color(0x3a4a60), t);
+      this.scene.fog.color.copy(fogC);
+      this.scene.fog.density = 0.003 + t * 0.001;
+      this.sun.intensity = 1.6 - t * 0.8; // keep at 0.8 — still visible
+      this.sun.color.lerp(new THREE.Color(0xaabbdd), t);
+      this.ambientLight.intensity = 0.5 - t * 0.1;
+      this.ambientLight.color.lerp(new THREE.Color(0x556688), t);
+      this.hemiLight.intensity = 0.5 - t * 0.15;
+      this.rimLight.intensity = 0.3 - t * 0.1;
+      this.renderer.toneMappingExposure = 1.1 - t * 0.15;
+    } else {
+      // Backcountry night (non-moonlight): dark sky for bright stars, terrain still readable
+      const bg = new THREE.Color(0x8aafc4).lerp(new THREE.Color(0x080c18), t);
+      this.scene.background.copy(bg);
+      const fogC = new THREE.Color(0xbccfe0).lerp(new THREE.Color(0x1a2230), t);
+      this.scene.fog.color.copy(fogC);
+      this.scene.fog.density = 0.003 + t * 0.002;
+      this.sun.intensity = 1.6 - t * 0.7;
+      this.sun.color.lerp(new THREE.Color(0x99aacc), t);
+      this.sun.position.set(30 - t * 50, 50 + t * 10, 20 - t * 10);
+      this.ambientLight.intensity = 0.5 - t * 0.1;
+      this.ambientLight.color.lerp(new THREE.Color(0x4a5a80), t);
+      this.hemiLight.intensity = 0.5 - t * 0.15;
+      this.rimLight.intensity = 0.3 - t * 0.1;
+      this.renderer.toneMappingExposure = 1.1 - t * 0.15;
+      // Stars in the sky
+      if (t > 0.3) this.createStarField();
+    }
+  }
+
+  createStarField() {
+    if (this.starField) return;
+
+    // Curved sky dome with star shader — same approach as aurora mesh
+    const vertexShader = `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+
+    const fragmentShader = `
+      uniform float uWarp;  // 0 = static stars, 1 = full time-warp spin
+      uniform float uTime;
+      varying vec2 vUv;
+
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+
+      vec2 starPos(vec2 cell, float seed) {
+        return cell + vec2(hash(cell + seed), hash(cell + seed + 77.7)) * 0.8 + 0.1;
+      }
+
+      float starDist(vec2 uv, vec2 center, float scale) {
+        vec2 d = (uv - center) * vec2(scale * 3.5, scale);
+        return length(d);
+      }
+
+      void main() {
+        // Warp effect: rotate UVs around center, stretch into streaks
+        vec2 uv = vUv;
+        vec2 center = vec2(0.5, 0.5);
+        vec2 toCenter = uv - center;
+
+        // Spin the entire star field when warping
+        float spinAngle = uWarp * uTime * 0.075;
+        float cosA = cos(spinAngle);
+        float sinA = sin(spinAngle);
+        vec2 rotated = vec2(
+          toCenter.x * cosA - toCenter.y * sinA,
+          toCenter.x * sinA + toCenter.y * cosA
+        );
+        vec2 warpUv = rotated + center;
+
+        // Use warped UVs for star lookup
+        vec2 sampleUv = mix(uv, warpUv, uWarp);
+
+        float stars = 0.0;
+        vec3 starColor = vec3(0.0);
+
+        // When warping: stars stretch into circular streaks
+        // Sample multiple points along the rotation arc for motion blur
+        int blurSamples = uWarp > 0.05 ? 5 : 1;
+        float totalWeight = 0.0;
+
+        for (int s = 0; s < 5; s++) {
+          if (s >= blurSamples) break;
+          float sampleOffset = float(s) / 5.0 * uWarp * 0.3;
+          float sAngle = spinAngle + sampleOffset;
+          float scos = cos(sAngle);
+          float ssin = sin(sAngle);
+          vec2 sRot = vec2(toCenter.x * scos - toCenter.y * ssin,
+                           toCenter.x * ssin + toCenter.y * scos) + center;
+          vec2 su = mix(uv, sRot, uWarp);
+          float weight = 1.0 - float(s) * 0.15;
+          totalWeight += weight;
+
+          // Dense dim stars
+          {
+            float scale = 120.0;
+            vec2 cell = floor(su * scale);
+            float h = hash(cell + 0.0);
+            if (h > 0.965) {
+              vec2 ct = starPos(cell, 0.0) / scale;
+              float d = starDist(su, ct, scale);
+              float b = exp(-d * d * 4.0) * (0.3 + h * 0.3) * weight;
+              starColor += vec3(0.7, 0.8, 1.0) * b;
+              stars += b;
+            }
+          }
+
+          // Medium stars
+          {
+            float scale = 60.0;
+            vec2 cell = floor(su * scale);
+            float h = hash(cell + 50.0);
+            if (h > 0.94) {
+              vec2 ct = starPos(cell, 50.0) / scale;
+              float d = starDist(su, ct, scale);
+              float b = exp(-d * d * 2.5) * (0.5 + h * 0.4) * weight;
+              starColor += vec3(0.9, 0.95, 1.0) * b;
+              stars += b;
+            }
+          }
+
+          // Bright stars
+          {
+            float scale = 25.0;
+            vec2 cell = floor(su * scale);
+            float h = hash(cell + 200.0);
+            if (h > 0.88) {
+              vec2 ct = starPos(cell, 200.0) / scale;
+              float d = starDist(su, ct, scale);
+              float core = exp(-d * d * 3.0);
+              float glow = exp(-d * d * 0.5) * 0.3;
+              float b = (core + glow) * (0.7 + h * 0.3) * weight;
+              float warmth = hash(cell + 300.0);
+              vec3 c = warmth > 0.5 ? vec3(1.0, 0.9, 0.75) : vec3(0.75, 0.88, 1.0);
+              starColor += c * b;
+              stars += b;
+            }
+          }
+        }
+
+        if (totalWeight > 1.0) {
+          starColor /= totalWeight;
+          stars /= totalWeight;
+        }
+
+        // Boost brightness during warp
+        starColor *= 1.0 + uWarp * 1.5;
+
+        float vFade = smoothstep(0.0, 0.12, vUv.y);
+        float hFade = smoothstep(0.0, 0.04, vUv.x) * smoothstep(1.0, 0.96, vUv.x);
+
+        float alpha = clamp(stars * vFade * hFade, 0.0, 1.0);
+        gl_FragColor = vec4(starColor * vFade * hFade, alpha);
+      }
+    `;
+
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uWarp: { value: 0 },
+        uTime: { value: 0 },
+      },
+      vertexShader,
+      fragmentShader,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+
+    // Curved sky dome — same geometry approach as aurora mesh
+    const geo = new THREE.PlaneGeometry(1000, 250, 64, 32);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const angle = (x / 1000) * Math.PI * 1.2;
+      const radius = 450;
+      pos.setX(i, Math.sin(angle) * radius);
+      pos.setZ(i, -Math.cos(angle) * radius - 100);
+      pos.setY(i, y + 10);
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+
+    this.starField = new THREE.Mesh(geo, material);
+    this.starField.renderOrder = -2;
+    this.starField.frustumCulled = false;
+    this.scene.add(this.starField);
+    // Also init shooting stars
+    if (!this.shootingStarPool) this.initShootingStars();
+  }
+
+  disposeStarField() {
+    if (this.starField) {
+      this.scene.remove(this.starField);
+      this.starField.geometry.dispose();
+      this.starField.material.dispose();
+      this.starField = null;
+    }
+  }
+
+  // ===== SHOOTING STARS =====
+
+  initShootingStars() {
+    this.shootingStars = [];
+    this.shootingStarPool = [];
+    // Pre-create a pool of 8 shooting star meshes
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.9,
+    });
+    for (let i = 0; i < 8; i++) {
+      // Elongated trail shape — thin stretched box
+      const geo = new THREE.BoxGeometry(0.3, 0.3, 8);
+      const mesh = new THREE.Mesh(geo, mat.clone());
+      mesh.visible = false;
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+      this.shootingStarPool.push(mesh);
+    }
+  }
+
+  spawnShootingStar() {
+    // Find an available mesh from the pool
+    const mesh = this.shootingStarPool.find(m => !m.visible);
+    if (!mesh) return;
+
+    const px = this.player.position.x;
+    const py = this.player.position.y;
+    const pz = this.player.position.z;
+
+    // Random start position on the sky dome — in front of the player
+    const angle = (Math.random() - 0.5) * 2.0; // spread left-right
+    const height = 40 + Math.random() * 80; // above player
+    const dist = 100 + Math.random() * 200; // distance ahead
+
+    mesh.position.set(
+      px + Math.sin(angle) * dist,
+      py + height,
+      pz - Math.cos(angle) * dist - 50
+    );
+
+    // Random direction — streaking diagonally downward
+    const speed = 150 + Math.random() * 200;
+    const dirX = (Math.random() - 0.5) * 0.8;
+    const dirY = -0.3 - Math.random() * 0.3;
+    const dirZ = -0.5 - Math.random() * 0.5;
+    const len = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+
+    const vel = {
+      x: (dirX / len) * speed,
+      y: (dirY / len) * speed,
+      z: (dirZ / len) * speed,
+    };
+
+    // Orient the mesh along its velocity direction
+    mesh.lookAt(
+      mesh.position.x + vel.x,
+      mesh.position.y + vel.y,
+      mesh.position.z + vel.z
+    );
+
+    // Scale: bright head + long tail
+    const trailLen = 3 + Math.random() * 5;
+    mesh.scale.set(1, 1, trailLen);
+    mesh.material.opacity = 0.95;
+    mesh.visible = true;
+
+    this.shootingStars.push({
+      mesh,
+      vel,
+      life: 0,
+      maxLife: 0.6 + Math.random() * 0.5,
+    });
+  }
+
+  updateShootingStars(dt, heightFeet) {
+    if (!this.shootingStars) return;
+
+    // Spawn shooting stars when above 30ft
+    if (heightFeet > 30 && this.starField) {
+      // Higher = more frequent
+      const spawnChance = Math.min(0.15, (heightFeet - 30) / 500);
+      if (Math.random() < spawnChance) {
+        this.spawnShootingStar();
+      }
+    }
+
+    // Update active shooting stars
+    for (let i = this.shootingStars.length - 1; i >= 0; i--) {
+      const star = this.shootingStars[i];
+      star.life += dt;
+
+      // Move
+      star.mesh.position.x += star.vel.x * dt;
+      star.mesh.position.y += star.vel.y * dt;
+      star.mesh.position.z += star.vel.z * dt;
+
+      // Fade out in last 30% of life
+      const fadeStart = star.maxLife * 0.7;
+      if (star.life > fadeStart) {
+        star.mesh.material.opacity = 0.95 * (1 - (star.life - fadeStart) / (star.maxLife - fadeStart));
+      }
+
+      // Remove when expired
+      if (star.life >= star.maxLife) {
+        star.mesh.visible = false;
+        this.shootingStars.splice(i, 1);
+      }
+    }
+  }
+
+  disposeShootingStars() {
+    if (this.shootingStarPool) {
+      for (const mesh of this.shootingStarPool) {
+        this.scene.remove(mesh);
+        mesh.geometry.dispose();
+        mesh.material.dispose();
+      }
+      this.shootingStarPool = null;
+      this.shootingStars = null;
     }
   }
 
@@ -1048,6 +1413,16 @@ export class Game {
       await logoutAccount();
     });
 
+    // Day/Night toggle
+    this.updateDaynightButton();
+    this.ui.daynightToggle.addEventListener('click', () => {
+      // Cycle: auto → day → night → auto
+      const cycle = { auto: 'day', day: 'night', night: 'auto' };
+      this.daynightPref = cycle[this.daynightPref] || 'auto';
+      localStorage.setItem('shred-daynight', this.daynightPref);
+      this.updateDaynightButton();
+    });
+
     // ---- PARTY SYSTEM ----
     this.ui.partyCreate.addEventListener('click', async () => {
       this.ui.partyError.textContent = 'CREATING...';
@@ -1201,7 +1576,19 @@ export class Game {
     this.ui.lobbyScreen.classList.remove('active');
     this.teardownLobbyScene();
     this.applyEquippedItems();
-    console.log('[closeLobby] gameMode:', this.gameMode, 'chair:', this.backcountryChair);
+    // Evaluate day/night: preference overrides real clock
+    if (this.daynightPref === 'day') {
+      this.nightBlend = 0;
+      this.nightMode = false;
+    } else if (this.daynightPref === 'night') {
+      this.nightBlend = 1.0;
+      this.nightMode = true;
+    } else {
+      // Auto: use real clock
+      this.nightBlend = this.getTimeOfDay();
+      this.nightMode = this.nightBlend > 0.1;
+    }
+    console.log('[closeLobby] gameMode:', this.gameMode, 'chair:', this.backcountryChair, 'nightBlend:', this.nightBlend.toFixed(2));
     this.swapTerrain();
     this.player.backcountryMode = this.gameMode === 'backcountry';
     // Reload per-chair/park leaderboard
@@ -1225,7 +1612,7 @@ export class Game {
       this.terrain.dispose();
     }
 
-    // Reset atmosphere from previous chair
+    // Reset atmosphere from previous mode
     if (this.auroraActive) {
       this.auroraActive = false;
       this.auroraIntensity = 0;
@@ -1237,19 +1624,34 @@ export class Game {
         this.auroraSnowLight = null;
       }
     }
+    this.disposeStarField();
+    this.disposeShootingStars();
+
+    // Reset all lights to daytime defaults
     this.scene.background = new THREE.Color(0x8aafc4);
     this.scene.fog.color.set(0xbccfe0);
     this.scene.fog.density = 0.003;
     this.sun.intensity = 1.6;
     this.sun.color.set(0xfff4e0);
     this.sun.position.set(30, 50, 20);
+    this.ambientLight.intensity = 0.5;
+    this.ambientLight.color.set(0x8ec8f0);
+    this.hemiLight.intensity = 0.5;
+    this.hemiLight.color.set(0x87ceeb);
+    this.hemiLight.groundColor.set(0xd0e8f0);
+    this.rimLight.intensity = 0.3;
+    this.renderer.toneMappingExposure = 1.1;
+
+    // Determine if night mode applies (moonlight always has its own night)
+    const useNight = this.nightMode && this.backcountryChair !== 'moonlight';
 
     if (this.gameMode === 'backcountry') {
-      console.log('[swapTerrain] Creating BackcountryTerrain');
-      this.terrain = new BackcountryTerrain(this.scene, this.backcountryChair);
+      console.log('[swapTerrain] Creating BackcountryTerrain, night:', useNight);
+      this.terrain = new BackcountryTerrain(this.scene, this.backcountryChair, useNight);
 
       // Chair-specific atmosphere
       if (this.backcountryChair === 'moonlight') {
+        // Moonlight always night with aurora — unaffected by clock
         this.auroraActive = true;
         this.auroraIntensity = 0;
         this.auroraMultiplier = 1.0;
@@ -1260,6 +1662,7 @@ export class Game {
         this.sun.color.set(0x99aadd);
         this.sun.position.set(-20, 60, 10);
         this.createAuroraMesh();
+        if (!this.shootingStarPool) this.initShootingStars();
 
         // Aurora light that casts green/teal glow onto the snow
         if (!this.auroraSnowLight) {
@@ -1270,10 +1673,15 @@ export class Game {
         }
       }
     } else {
-      console.log('[swapTerrain] Creating Park Terrain, parkId:', this.parkId);
+      console.log('[swapTerrain] Creating Park Terrain, parkId:', this.parkId, 'night:', useNight);
       const seed = this.multiplayer.active ? this.multiplayer.terrainSeed : null;
-      this.terrain = new Terrain(this.scene, seed, this.parkId);
+      this.terrain = new Terrain(this.scene, seed, this.parkId, useNight);
       this.parkTerrain = this.terrain;
+    }
+
+    // Apply night atmosphere (non-moonlight only)
+    if (useNight) {
+      this.applyNightAtmosphere();
     }
   }
 
@@ -1944,6 +2352,28 @@ export class Game {
           );
           this.auroraSnowLight.target.position.copy(this.player.position);
         }
+      }
+
+      // Star field follows player (backcountry night)
+      if (this.starField) {
+        this.starField.position.x = this.player.position.x;
+        this.starField.position.y = this.player.position.y;
+        this.starField.position.z = this.player.position.z - 50;
+
+        // Star warp effect: stars spin when player is 30+ feet in the air
+        const heightFt = playerState.jumpHeightFeet || 0;
+        // Gentle start at 30ft, current speed reached at ~200ft, max at 350ft+
+        const targetWarp = heightFt > 30 ? Math.min(1.0, (heightFt - 30) / 320) : 0;
+        const currentWarp = this.starField.material.uniforms.uWarp.value;
+        // Smooth ramp up/down
+        this.starField.material.uniforms.uWarp.value +=
+          (targetWarp - currentWarp) * Math.min(1, dt * (targetWarp > currentWarp ? 4 : 6));
+        this.starField.material.uniforms.uTime.value += dt;
+      }
+
+      // Shooting stars when airborne above 30ft at night
+      if (this.nightMode || this.backcountryChair === 'moonlight') {
+        this.updateShootingStars(dt, playerState.jumpHeightFeet || 0);
       }
 
       // UI

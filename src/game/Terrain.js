@@ -128,9 +128,10 @@ const PARK_CONFIGS = {
 };
 
 export class Terrain {
-  constructor(scene, seed = null, parkId = 'big-white') {
+  constructor(scene, seed = null, parkId = 'big-white', nightMode = false) {
     this.scene = scene;
     this.parkId = parkId;
+    this.nightMode = nightMode;
     this.config = PARK_CONFIGS[parkId] || PARK_CONFIGS['big-white'];
     // Seeded RNG for deterministic terrain in multiplayer
     this.rng = seed != null ? mulberry32(seed) : null;
@@ -204,6 +205,24 @@ export class Terrain {
     this.barrierMaterial = new THREE.MeshStandardMaterial({
       color: 0xdd3333, roughness: 0.6, metalness: 0.1,
     });
+
+    // Floodlight materials (used day and night, but lights only active at night)
+    this.floodlightPoleMaterial = new THREE.MeshStandardMaterial({
+      color: 0x555555, roughness: 0.7, metalness: 0.3,
+    });
+    this.floodlightHeadMaterial = new THREE.MeshStandardMaterial({
+      color: nightMode ? 0xffeedd : 0x888888,
+      emissive: nightMode ? 0xffeedd : 0x000000,
+      emissiveIntensity: nightMode ? 1.0 : 0,
+      roughness: 0.3, metalness: 0.5,
+    });
+
+    // Night mode: slight blue tint on snow, brighter windows
+    if (nightMode) {
+      this.snowMaterial.color.set(0xc0ccdd);
+      this.rampMaterial.color.set(0xb0c0d8);
+      this.windowMaterial.emissiveIntensity = 1.0;
+    }
 
     for (let i = 0; i < 5; i++) {
       this.generateChunk();
@@ -616,6 +635,24 @@ export class Terrain {
           radius: 2.0, type: 'rock',
         });
       }
+    }
+
+    // Floodlights along the run (always placed, but only lit at night)
+    const floodCount = 2 + (this.rand() > 0.5 ? 1 : 0);
+    for (let i = 0; i < floodCount; i++) {
+      const side = i % 2 === 0 ? 1 : -1;
+      const x = side * (22 + this.rand() * 4);
+      const z = -this.chunkLength * (i / floodCount) + (this.rand() - 0.5) * 30;
+      const globalZ = zOffset + z;
+      const y = this.computeHeight(x, globalZ);
+      const light = this.createFloodlight(side);
+      light.position.set(x, y, globalZ);
+      this.scene.add(light);
+      chunk.objects.push(light);
+      this.obstacles.push({
+        position: new THREE.Vector3(x, y, globalZ),
+        radius: 0.5, type: 'tree',
+      });
     }
 
     // Checkpoints
@@ -1696,6 +1733,53 @@ export class Terrain {
       );
       snow.position.y = (3.2 + i * 1.3) * scale;
       group.add(snow);
+    }
+
+    return group;
+  }
+
+  // Resort-style floodlight pole for night skiing
+  createFloodlight(side) {
+    const group = new THREE.Group();
+
+    // Tall pole
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12, 0.18, 10, 6),
+      this.floodlightPoleMaterial
+    );
+    pole.position.y = 5;
+    pole.castShadow = false;
+    group.add(pole);
+
+    // Cross-arm angled toward the run
+    const arm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.06, 2.5, 4),
+      this.floodlightPoleMaterial
+    );
+    arm.position.set(-side * 1.0, 9.5, 0);
+    arm.rotation.z = side * 0.4; // angle inward toward run
+    group.add(arm);
+
+    // Light fixture head (2 fixtures per pole)
+    for (let i = 0; i < 2; i++) {
+      const head = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 0.25, 0.6),
+        this.floodlightHeadMaterial
+      );
+      head.position.set(-side * (1.2 + i * 0.8), 9.6, 0);
+      group.add(head);
+    }
+
+    // SpotLight pointing down toward the run (only at night)
+    if (this.nightMode) {
+      const spot = new THREE.SpotLight(0xfff4e8, 5.0, 55, Math.PI / 3, 0.4, 0.8);
+      spot.position.set(-side * 1.5, 9.8, 0);
+      spot.castShadow = false;
+      const target = new THREE.Object3D();
+      target.position.set(-side * 8, 0, 0); // aim toward center of run
+      group.add(target);
+      spot.target = target;
+      group.add(spot);
     }
 
     return group;
