@@ -413,7 +413,7 @@ const CHAIRS = {
     cliffs: [],
     treeLineZ: -100,
     rockDensity: 1.5,
-    treeDensity: 5.0,
+    treeDensity: 15.0,
     checkpointInterval: 320,
     checkpointCount: 12,
     generateRadius: 1,
@@ -448,14 +448,8 @@ const CHAIRS = {
       minSpeed: 7,
     },
 
-    // Frozen creek beds — smooth halfpipe channels winding down the mountain
-    frozenCreeks: [
-      { startZ: -300,  endZ: -600,  xPath: [0, -30, -60, -40, -10], halfWidth: 8, depth: 4 },
-      { startZ: -800,  endZ: -1100, xPath: [50, 80, 60, 30, 50],   halfWidth: 10, depth: 5 },
-      { startZ: -1400, endZ: -1700, xPath: [-40, -20, 10, -10, -30], halfWidth: 9, depth: 4 },
-      { startZ: -2000, endZ: -2400, xPath: [30, 60, 90, 70, 40],   halfWidth: 12, depth: 6 },
-      { startZ: -2700, endZ: -3000, xPath: [-60, -30, 0, -20, -50], halfWidth: 8, depth: 4 },
-    ],
+    // Frozen creek beds removed — clean open terrain
+    frozenCreeks: [],
 
     // Sastrugi fields — wavy wind-carved snow zones
     sastrugiFields: [
@@ -888,6 +882,16 @@ export class BackcountryTerrain {
     this.frozenIceMaterial = new THREE.MeshStandardMaterial({
       color: 0x6699cc, roughness: 0.1, metalness: 0.15,
       transparent: true, opacity: 0.75,
+    });
+    // Dead tree materials for Moonlight Ridge
+    this.birchBarkMaterial = new THREE.MeshStandardMaterial({
+      color: 0xd0c8b8, roughness: 0.85, flatShading: true, // pale white bark
+    });
+    this.deadOakMaterial = new THREE.MeshStandardMaterial({
+      color: 0x3a2a1a, roughness: 1.0, flatShading: true, // dark gnarly bark
+    });
+    this.snagMaterial = new THREE.MeshStandardMaterial({
+      color: 0x2a2220, roughness: 1.0, flatShading: true, // charred/weathered
     });
 
     // River zones — populated during chunk generation for collision detection
@@ -1565,11 +1569,11 @@ export class BackcountryTerrain {
         }
       }
 
-      // Moonlight Ridge — night palette override
+      // Moonlight Ridge — bright moonlit snow palette
       if (this.chairId === 'moonlight') {
-        const moonBase = 0.45 + Math.sin(x * 0.08 + globalZ * 0.04) * 0.04;
-        colors[i * 3]     = moonBase * 0.6;
-        colors[i * 3 + 1] = moonBase * 0.7;
+        const moonBase = 0.72 + Math.sin(x * 0.08 + globalZ * 0.04) * 0.05;
+        colors[i * 3]     = moonBase * 0.82;
+        colors[i * 3 + 1] = moonBase * 0.88;
         colors[i * 3 + 2] = moonBase * 1.0;
 
         // Frozen creek beds: icy blue-white
@@ -2117,11 +2121,12 @@ export class BackcountryTerrain {
 
       const y = this.computeHeight(x, globalZ);
 
-      const tree = cfg.oldGrowthTrees ? this.createOldGrowthTree() : this.createSnowPineTree();
+      const tree = this.chairId === 'moonlight' ? this.createMoonlightTree()
+        : cfg.oldGrowthTrees ? this.createOldGrowthTree() : this.createSnowPineTree();
       tree.position.set(x, y, globalZ);
       this.scene.add(tree);
       chunk.objects.push(tree);
-      const treeRadius = cfg.oldGrowthTrees ? 1.8 : 1.2;
+      const treeRadius = cfg.oldGrowthTrees ? 1.8 : this.chairId === 'moonlight' ? 0.8 : 1.2;
       const obs = { position: new THREE.Vector3(x, y, globalZ), radius: treeRadius, type: 'tree' };
       this.obstacles.push(obs);
       chunk.chunkObstacles.push(obs);
@@ -2566,6 +2571,187 @@ export class BackcountryTerrain {
     group.add(topSnow);
 
     return group;
+  }
+
+  // Dead birch — tall white trunk with thin forking branches at top
+  createDeadBirch() {
+    const group = new THREE.Group();
+    const scale = 0.7 + this.rng() * 0.6;
+    const height = (8 + this.rng() * 5) * scale;
+    const lean = (this.rng() - 0.5) * 0.15;
+
+    // Main trunk — tall, thin, white bark
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12 * scale, 0.22 * scale, height, 5),
+      this.birchBarkMaterial
+    );
+    trunk.position.y = height / 2;
+    trunk.rotation.z = lean;
+    trunk.castShadow = true;
+    group.add(trunk);
+
+    // 3-5 forking branches near the top
+    const branchCount = 3 + Math.floor(this.rng() * 3);
+    for (let i = 0; i < branchCount; i++) {
+      const branchLen = (2 + this.rng() * 3) * scale;
+      const branchRadius = 0.04 * scale + this.rng() * 0.03 * scale;
+      const branch = new THREE.Mesh(
+        new THREE.CylinderGeometry(branchRadius * 0.3, branchRadius, branchLen, 4),
+        this.birchBarkMaterial
+      );
+      const attachY = height * (0.55 + this.rng() * 0.4);
+      branch.position.y = attachY;
+      branch.position.x = (this.rng() - 0.5) * 0.4 * scale;
+      // Branch angles outward and upward
+      const spreadAngle = (this.rng() - 0.5) * 1.2;
+      branch.rotation.z = spreadAngle + lean;
+      branch.rotation.y = this.rng() * Math.PI * 2;
+      // Offset branch tip position
+      branch.position.x += Math.sin(spreadAngle) * branchLen * 0.3;
+      branch.castShadow = true;
+      group.add(branch);
+
+      // Sub-branch (thin twig)
+      if (this.rng() > 0.4) {
+        const twig = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.01 * scale, branchRadius * 0.25, branchLen * 0.6, 3),
+          this.birchBarkMaterial
+        );
+        twig.position.copy(branch.position);
+        twig.position.y += branchLen * 0.3;
+        twig.position.x += (this.rng() - 0.5) * 1.0 * scale;
+        twig.rotation.z = spreadAngle * 1.3 + (this.rng() - 0.5) * 0.5;
+        twig.rotation.y = this.rng() * Math.PI * 2;
+        twig.castShadow = true;
+        group.add(twig);
+      }
+    }
+
+    return group;
+  }
+
+  // Dead oak — thick dark trunk with wide spreading gnarly branches
+  createDeadOak() {
+    const group = new THREE.Group();
+    const scale = 0.8 + this.rng() * 0.5;
+    const height = (5 + this.rng() * 4) * scale;
+    const lean = (this.rng() - 0.5) * 0.1;
+
+    // Thick trunk
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.25 * scale, 0.45 * scale, height, 6),
+      this.deadOakMaterial
+    );
+    trunk.position.y = height / 2;
+    trunk.rotation.z = lean;
+    trunk.castShadow = true;
+    group.add(trunk);
+
+    // 4-6 wide-spreading thick branches
+    const branchCount = 4 + Math.floor(this.rng() * 3);
+    for (let i = 0; i < branchCount; i++) {
+      const branchLen = (3 + this.rng() * 4) * scale;
+      const branchR = (0.08 + this.rng() * 0.08) * scale;
+      const branch = new THREE.Mesh(
+        new THREE.CylinderGeometry(branchR * 0.3, branchR, branchLen, 5),
+        this.deadOakMaterial
+      );
+      const attachY = height * (0.4 + this.rng() * 0.45);
+      // Wide horizontal spread — oak branches go outward
+      const angle = (i / branchCount) * Math.PI * 2 + this.rng() * 0.5;
+      const spreadTilt = 0.4 + this.rng() * 0.8; // more horizontal than birch
+      branch.position.set(
+        Math.cos(angle) * 0.3 * scale,
+        attachY,
+        Math.sin(angle) * 0.3 * scale
+      );
+      branch.rotation.z = Math.cos(angle) * spreadTilt;
+      branch.rotation.x = Math.sin(angle) * spreadTilt;
+      branch.castShadow = true;
+      group.add(branch);
+
+      // Gnarly sub-branch
+      if (this.rng() > 0.3) {
+        const subLen = branchLen * (0.4 + this.rng() * 0.3);
+        const sub = new THREE.Mesh(
+          new THREE.CylinderGeometry(branchR * 0.15, branchR * 0.4, subLen, 4),
+          this.deadOakMaterial
+        );
+        sub.position.copy(branch.position);
+        sub.position.y += branchLen * 0.25;
+        sub.position.x += Math.cos(angle) * branchLen * 0.4;
+        sub.position.z += Math.sin(angle) * branchLen * 0.4;
+        sub.rotation.z = branch.rotation.z + (this.rng() - 0.5) * 0.6;
+        sub.rotation.x = branch.rotation.x + (this.rng() - 0.5) * 0.6;
+        sub.castShadow = true;
+        group.add(sub);
+      }
+    }
+
+    return group;
+  }
+
+  // Gnarly snag — twisted thick stump with broken branches
+  createGnarlySnag() {
+    const group = new THREE.Group();
+    const scale = 0.6 + this.rng() * 0.5;
+    const height = (3 + this.rng() * 4) * scale;
+    const lean = (this.rng() - 0.5) * 0.2;
+
+    // Thick broken trunk
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.15 * scale, 0.5 * scale, height, 6),
+      this.snagMaterial
+    );
+    trunk.position.y = height / 2;
+    trunk.rotation.z = lean;
+    trunk.rotation.x = (this.rng() - 0.5) * 0.1;
+    trunk.castShadow = true;
+    group.add(trunk);
+
+    // 2-4 broken stubs sticking out
+    const stubCount = 2 + Math.floor(this.rng() * 3);
+    for (let i = 0; i < stubCount; i++) {
+      const stubLen = (1 + this.rng() * 2.5) * scale;
+      const stubR = (0.06 + this.rng() * 0.06) * scale;
+      const stub = new THREE.Mesh(
+        new THREE.CylinderGeometry(stubR * 0.2, stubR, stubLen, 4),
+        this.snagMaterial
+      );
+      const attachY = height * (0.3 + this.rng() * 0.5);
+      const angle = this.rng() * Math.PI * 2;
+      stub.position.set(
+        Math.cos(angle) * 0.25 * scale,
+        attachY,
+        Math.sin(angle) * 0.25 * scale
+      );
+      // Stubs point outward at various angles — some drooping, some up
+      const tilt = 0.5 + this.rng() * 1.0;
+      stub.rotation.z = Math.cos(angle) * tilt;
+      stub.rotation.x = Math.sin(angle) * tilt;
+      stub.castShadow = true;
+      group.add(stub);
+    }
+
+    // Optional: snow clump on top of broken trunk
+    if (this.rng() > 0.5) {
+      const snowCap = new THREE.Mesh(
+        new THREE.SphereGeometry(0.3 * scale, 4, 3, 0, Math.PI * 2, 0, Math.PI * 0.5),
+        this.snowMaterial
+      );
+      snowCap.position.y = height + 0.1 * scale;
+      group.add(snowCap);
+    }
+
+    return group;
+  }
+
+  // Random dead tree for moonlight — mix of birch, oak, snags
+  createMoonlightTree() {
+    const roll = this.rng();
+    if (roll < 0.4) return this.createDeadBirch();
+    if (roll < 0.7) return this.createDeadOak();
+    return this.createGnarlySnag();
   }
 
   createBackcountryJump(feet) {

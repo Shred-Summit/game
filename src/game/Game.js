@@ -570,57 +570,77 @@ export class Game {
       uniform float uIntensity;
       varying vec2 vUv;
 
-      float band(float y, float center, float width, float softness) {
-        return smoothstep(center - width - softness, center - width, y)
-             * (1.0 - smoothstep(center + width, center + width + softness, y));
-      }
+      // Hash for pseudo-random per-ray variation
+      float hash(float n) { return fract(sin(n) * 43758.5453); }
 
       void main() {
         float x = vUv.x;
         float y = vUv.y;
 
-        // Curtain-like warp: multiple frequencies for realistic undulation
-        float drift = sin(x * 2.5 + uTime * 0.25) * 0.08
-                    + sin(x * 6.0 - uTime * 0.4) * 0.04
-                    + sin(x * 11.0 + uTime * 0.7) * 0.02;
+        // === VERTICAL RAYS — the dominant aurora feature ===
+        // Many individual rays fanning upward from the horizon
+        float rays = 0.0;
+        vec3 rayColor = vec3(0.0);
 
-        // Vertical streaks (aurora curtain effect)
-        float streak = 0.7 + 0.3 * sin(x * 20.0 + y * 3.0 + uTime * 0.15);
+        for (int i = 0; i < 18; i++) {
+          float fi = float(i);
+          // Each ray has a unique horizontal position that drifts slowly
+          float rayX = hash(fi * 7.3) + sin(uTime * 0.12 + fi * 1.7) * 0.06;
+          // Ray width varies — some thin, some wider
+          float rayW = 0.008 + hash(fi * 3.1) * 0.018;
+          // Distance from ray center
+          float dx = abs(x - rayX);
+          // Soft gaussian-ish falloff
+          float rayStrength = exp(-dx * dx / (rayW * rayW));
 
-        // Build aurora bands — wide, overlapping, curtain-like
-        float b1 = band(y + drift, 0.30, 0.10, 0.12)
-                  * (0.6 + 0.4 * sin(x * 4.0 + uTime * 0.3)) * streak;
-        float b2 = band(y - drift * 0.8, 0.50, 0.08, 0.14)
-                  * (0.5 + 0.5 * sin(x * 6.0 - uTime * 0.5)) * streak;
-        float b3 = band(y + drift * 1.2, 0.68, 0.07, 0.10)
-                  * (0.5 + 0.5 * sin(x * 3.0 + uTime * 0.2)) * streak;
-        float b4 = band(y - drift * 0.6, 0.18, 0.06, 0.08)
-                  * (0.6 + 0.4 * sin(x * 5.0 + uTime * 0.35));
-        float b5 = band(y + drift * 0.9, 0.42, 0.06, 0.11)
-                  * (0.5 + 0.5 * sin(x * 7.0 - uTime * 0.4)) * streak;
+          // Each ray has slightly different vertical extent
+          float rayTop = 0.5 + hash(fi * 11.0) * 0.45;
+          float rayBottom = 0.0;
+          // Rays brighten at base, fade at top
+          float vertFade = smoothstep(rayBottom, rayBottom + 0.08, y)
+                         * smoothstep(rayTop, rayTop * 0.5, y);
+          // Slow pulsing per-ray
+          float pulse = 0.6 + 0.4 * sin(uTime * (0.3 + hash(fi * 5.0) * 0.4) + fi * 2.0);
 
-        // Color: vivid greens dominate, with purple and blue accents
-        vec3 c1 = vec3(0.05, 1.0, 0.3) * b1;   // bright green
-        vec3 c2 = vec3(0.5, 0.1, 0.9) * b2;     // purple
-        vec3 c3 = vec3(0.1, 0.85, 0.5) * b3;    // green-teal
-        vec3 c4 = vec3(0.7, 0.15, 0.6) * b4;    // magenta-pink
-        vec3 c5 = vec3(0.15, 0.7, 0.9) * b5;    // cyan
+          rayStrength *= vertFade * pulse;
 
-        vec3 col = c1 + c2 + c3 + c4 + c5;
+          // Color per ray: mostly vivid green, some teal, rare purple
+          vec3 rc;
+          float colorSeed = hash(fi * 13.0);
+          if (colorSeed < 0.55) {
+            rc = vec3(0.08, 1.0, 0.35);    // vivid green (dominant)
+          } else if (colorSeed < 0.75) {
+            rc = vec3(0.05, 0.9, 0.55);    // green-teal
+          } else if (colorSeed < 0.88) {
+            rc = vec3(0.12, 0.7, 0.85);    // cyan-teal
+          } else {
+            rc = vec3(0.45, 0.1, 0.75);    // purple accent
+          }
 
-        // Boost overall vibrancy
-        col *= 1.5;
+          rayColor += rc * rayStrength;
+          rays += rayStrength;
+        }
 
-        // Vertical fade: transparent at bottom, fade top
-        float vFade = smoothstep(0.0, 0.1, y) * smoothstep(1.0, 0.8, y);
+        // === BACKGROUND GLOW — soft diffuse aurora wash behind the rays ===
+        float drift = sin(x * 2.5 + uTime * 0.2) * 0.06
+                    + sin(x * 5.0 - uTime * 0.3) * 0.03;
+        float glow1 = exp(-(y - 0.25 + drift) * (y - 0.25 + drift) / 0.04) * 0.4;
+        float glow2 = exp(-(y - 0.45 - drift * 0.7) * (y - 0.45 - drift * 0.7) / 0.06) * 0.3;
+        vec3 glowColor = vec3(0.06, 0.6, 0.3) * glow1 + vec3(0.04, 0.45, 0.5) * glow2;
+
+        // Combine rays + glow — rays are bright and dominant
+        vec3 col = rayColor * 2.8 + glowColor * 1.5;
+
+        // Vertical fade: transparent at very bottom, gentle fade at top
+        float vFade = smoothstep(0.0, 0.05, y) * smoothstep(1.0, 0.7, y);
 
         // Horizontal fade at edges
-        float hFade = smoothstep(0.0, 0.08, x) * smoothstep(1.0, 0.92, x);
+        float hFade = smoothstep(0.0, 0.06, x) * smoothstep(1.0, 0.94, x);
 
-        float alpha = length(col) * 0.6 * vFade * hFade * uIntensity;
+        float alpha = (length(rayColor) * 0.8 + length(glowColor) * 0.3) * vFade * hFade * uIntensity;
         col *= uIntensity;
 
-        gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.9));
+        gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.95));
       }
     `;
 
@@ -636,18 +656,18 @@ export class Game {
       side: THREE.DoubleSide,
     });
 
-    // Curved sky plane — cylinder segment above and behind the player
-    const geo = new THREE.PlaneGeometry(600, 200, 64, 32);
+    // Curved sky dome — centered in front of player, just above horizon
+    const geo = new THREE.PlaneGeometry(1000, 250, 64, 32);
     const pos = geo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
       const y = pos.getY(i);
-      // Curve into a dome arc
-      const angle = (x / 600) * Math.PI * 0.8; // ~144 degree arc
-      const radius = 400;
+      // Curve into a wide dome arc centered ahead of the player
+      const angle = (x / 1000) * Math.PI * 1.2; // ~216 degree arc for wide coverage
+      const radius = 450;
       pos.setX(i, Math.sin(angle) * radius);
-      pos.setZ(i, -Math.cos(angle) * radius + radius * 0.3);
-      pos.setY(i, y + 180); // push high up
+      pos.setZ(i, -Math.cos(angle) * radius - 100); // push forward in front of player
+      pos.setY(i, y + 10); // sit right at horizon line
     }
     pos.needsUpdate = true;
     geo.computeVertexNormals();
@@ -1211,6 +1231,11 @@ export class Game {
       this.auroraIntensity = 0;
       this.auroraMultiplier = 1.0;
       this.disposeAuroraMesh();
+      if (this.auroraSnowLight) {
+        this.scene.remove(this.auroraSnowLight.target);
+        this.scene.remove(this.auroraSnowLight);
+        this.auroraSnowLight = null;
+      }
     }
     this.scene.background = new THREE.Color(0x8aafc4);
     this.scene.fog.color.set(0xbccfe0);
@@ -1231,10 +1256,18 @@ export class Game {
         this.scene.background = new THREE.Color(0x0a0e1a);
         this.scene.fog.color.set(0x0a0e1a);
         this.scene.fog.density = 0.012;
-        this.sun.intensity = 0.2;
-        this.sun.color.set(0x8888cc);
+        this.sun.intensity = 0.35;
+        this.sun.color.set(0x99aadd);
         this.sun.position.set(-20, 60, 10);
         this.createAuroraMesh();
+
+        // Aurora light that casts green/teal glow onto the snow
+        if (!this.auroraSnowLight) {
+          this.auroraSnowLight = new THREE.DirectionalLight(0x30cc80, 0);
+          this.auroraSnowLight.target = new THREE.Object3D();
+          this.scene.add(this.auroraSnowLight);
+          this.scene.add(this.auroraSnowLight.target);
+        }
       }
     } else {
       console.log('[swapTerrain] Creating Park Terrain, parkId:', this.parkId);
@@ -1877,9 +1910,10 @@ export class Game {
         const t = this.auroraIntensity;
         this.scene.fog.density = acfg.baseFogDensity + (acfg.litFogDensity - acfg.baseFogDensity) * t;
         this.sun.intensity = acfg.baseAmbient + (acfg.litAmbient - acfg.baseAmbient) * t;
-        const r = 0.04 + t * 0.03;
-        const g = 0.06 + t * 0.12;
-        const b = 0.10 + t * 0.06;
+        // Dark sky that shifts green with aurora — keeps contrast with bright rays
+        const r = 0.02 + t * 0.01;
+        const g = 0.04 + t * 0.08;
+        const b = 0.08 + t * 0.04;
         this.scene.background.setRGB(r, g, b);
         this.scene.fog.color.setRGB(r, g, b);
 
@@ -1889,7 +1923,26 @@ export class Game {
           this.auroraMesh.material.uniforms.uIntensity.value = t;
           // Follow player position so aurora stays overhead
           this.auroraMesh.position.x = this.player.position.x;
+          this.auroraMesh.position.y = this.player.position.y;
           this.auroraMesh.position.z = this.player.position.z - 50;
+        }
+
+        // Aurora casts green/teal light onto snow
+        if (this.auroraSnowLight) {
+          this.auroraSnowLight.intensity = t * 0.7;
+          const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.001 * 0.4);
+          // Shift between green and teal
+          this.auroraSnowLight.color.setRGB(
+            0.08 + pulse * 0.05,
+            0.55 + pulse * 0.15,
+            0.35 + (1 - pulse) * 0.2
+          );
+          this.auroraSnowLight.position.set(
+            this.player.position.x,
+            this.player.position.y + 80,
+            this.player.position.z - 20
+          );
+          this.auroraSnowLight.target.position.copy(this.player.position);
         }
       }
 
@@ -2272,6 +2325,9 @@ export class Game {
     this.tricks.auroraMultiplier = 1.0;
     this.auroraMultiplier = 1.0;
     this._lastAuroraTrickTime = 0;
+
+    // Ensure backcountry mode flag stays in sync
+    this.player.backcountryMode = this.gameMode === 'backcountry';
 
     // Backcountry: reset terrain so chunks at start are loaded
     if (this.gameMode === 'backcountry' && this.terrain.reset) {
