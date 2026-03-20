@@ -545,6 +545,7 @@ export class Game {
     this.sun.shadow.bias = -0.001;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
+    this._lastSunUpdatePos = { x: 0, y: 0, z: 0 };
 
     this.hemiLight = new THREE.HemisphereLight(0x87ceeb, 0xd0e8f0, 0.5);
     this.scene.add(this.hemiLight);
@@ -2058,19 +2059,27 @@ export class Game {
     const positions = new Float32Array(maxSegs * 2 * 3);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setIndex([]);
+    // Pre-allocate index buffer as ring buffer — no push/splice per frame
+    const maxIndices = maxSegs * 6;
+    const indexArray = new Uint16Array(maxIndices);
+    const indexAttr = new THREE.BufferAttribute(indexArray, 1);
+    geometry.setIndex(indexAttr);
+    indexAttr.count = 0;
     const mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = false;
     this.scene.add(mesh);
-    return { mesh, indices: [], index: 0, count: 0, lastPos: null };
+    return { mesh, indexArray, indexStart: 0, indexCount: 0, maxIndices, index: 0, count: 0, lastPos: null };
   }
 
   _resetTrail(trail) {
     trail.index = 0;
     trail.count = 0;
     trail.lastPos = null;
-    trail.indices = [];
-    trail.mesh.geometry.setIndex([]);
+    trail.indexStart = 0;
+    trail.indexCount = 0;
+    const indexAttr = trail.mesh.geometry.index;
+    indexAttr.count = 0;
+    indexAttr.needsUpdate = true;
   }
 
   updateCarveTrail(playerState) {
@@ -2131,16 +2140,30 @@ export class Game {
     if (trail.lastPos !== null) {
       const prev = ((i - 1 + this.trailMax) % this.trailMax) * 2;
       const curr = vi;
-      trail.indices.push(prev, prev + 1, curr);
-      trail.indices.push(curr, prev + 1, curr + 1);
+      // Write 6 indices into ring buffer (no push/splice)
+      const writePos = (trail.indexStart + trail.indexCount) % trail.maxIndices;
+      trail.indexArray[writePos]     = prev;
+      trail.indexArray[writePos + 1] = prev + 1;
+      trail.indexArray[writePos + 2] = curr;
+      trail.indexArray[writePos + 3] = curr;
+      trail.indexArray[writePos + 4] = prev + 1;
+      trail.indexArray[writePos + 5] = curr + 1;
 
-      const maxIndices = this.trailMax * 6;
-      if (trail.indices.length > maxIndices) {
-        trail.indices.splice(0, 6);
+      if (trail.indexCount + 6 > trail.maxIndices) {
+        // Buffer full — advance start, evict oldest segment
+        trail.indexStart = (trail.indexStart + 6) % trail.maxIndices;
+      } else {
+        trail.indexCount += 6;
       }
+
+      // Update draw range without reallocating
+      const indexAttr = trail.mesh.geometry.index;
+      indexAttr.needsUpdate = true;
+      indexAttr.count = trail.indexCount;
+      // Shift updateRange to cover written region
+      trail.mesh.geometry.setDrawRange(0, trail.indexCount);
     }
 
-    trail.mesh.geometry.setIndex(trail.indices);
     positions.needsUpdate = true;
 
     trail.index = (trail.index + 1) % this.trailMax;
@@ -2276,14 +2299,23 @@ export class Game {
       // Camera
       this.updateCamera(dt, playerState);
 
-      // Shadow follows player
-      this.sun.position.set(
-        this.player.position.x + 30,
-        this.player.position.y + 50,
-        this.player.position.z + 20
-      );
-      this.sun.target.position.copy(this.player.position);
-      this.sun.target.updateMatrixWorld();
+      // Shadow follows player — throttled to reduce GPU shadow map updates
+      const _sp = this._lastSunUpdatePos;
+      const _dx = this.player.position.x - _sp.x;
+      const _dy = this.player.position.y - _sp.y;
+      const _dz = this.player.position.z - _sp.z;
+      if (_dx * _dx + _dy * _dy + _dz * _dz > 4) { // > 2 units moved
+        this.sun.position.set(
+          this.player.position.x + 30,
+          this.player.position.y + 50,
+          this.player.position.z + 20
+        );
+        this.sun.target.position.copy(this.player.position);
+        this.sun.target.updateMatrixWorld();
+        _sp.x = this.player.position.x;
+        _sp.y = this.player.position.y;
+        _sp.z = this.player.position.z;
+      }
 
       // Multiplayer: send local state and update remote players
       if (this.multiplayer.active && this.multiplayer._gameStarted) {

@@ -56,6 +56,7 @@ export class Player {
     this.landedOnRail = false;     // one-shot flag: air → rail transition
     this.frontswapCount = 0;       // number of frontside↔backside swaps during grind
     this.grindExitTimer = 0;       // cooldown after jumping off rail
+    this._grindedRails = new Set(); // rails already grinded this run — no re-snap
     this.grindAborted = false;     // true when fell off rail due to low speed (no points)
 
     // Stance & switch
@@ -554,6 +555,7 @@ export class Player {
       if (wasInAir && this.airTime > 0.4) {
         for (const ramp of terrain.ramps) {
           if (ramp.type !== 'kicker' || ramp.landingZoneStartZ === undefined) continue;
+          if (Math.abs(this.position.z - ramp.position.z) > 50) continue;
           const dx = this.position.x - ramp.position.x;
           const z = this.position.z;
           if (Math.abs(dx) < ramp.landingWidth / 2 &&
@@ -902,20 +904,21 @@ export class Player {
         this.position.y = railTop + 0.2;
         this.velocity.y = 0;
 
-        // Maintain forward speed, slight friction
-        this.velocity.multiplyScalar(0.998);
+        // Maintain forward speed — very light friction so momentum carries
+        this.velocity.z *= 0.9995;
 
-        // Minimum speed check: hop off rail below 35 km/h (9.722 m/s) — no points
+        // Minimum speed check: hop off rail below 20 km/h (5.556 m/s) — no points
         const grindSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
-        if (grindSpeed < 9.722 * this.visualSpeedScale) {
+        if (grindSpeed < 5.556 * this.visualSpeedScale) {
           this.grinding = false;
           this.grindAborted = true; // signal TrickSystem to skip scoring
+          this._grindedRails.add(this.grindRail);
           this.grindRail = null;
           this.grounded = false;
           this.peakHeight = 0;
           this.velocity.y = 2.0; // small hop off
           this.velocity.x += (Math.random() < 0.5 ? -1 : 1) * 3.0; // push to random side
-          this.grindExitTimer = 4.0; // long cooldown so player doesn't re-lock
+          this.grindExitTimer = 0.3; // short cooldown — only blocks same rail re-snap
         }
 
         // Track grind duration
@@ -988,11 +991,12 @@ export class Player {
         if (input.jump) {
           this.velocity.y = this.jumpForce * 0.7;
           this.grinding = false;
+          this._grindedRails.add(this.grindRail);
           this.grindRail = null;
           this.grounded = false;
           this.peakHeight = 0;
           this.launchedFromKicker = true; // full trick rotation off rails
-          this.grindExitTimer = 4.0; // prevent re-snap after jumping off
+          this.grindExitTimer = 0.3; // short cooldown — only blocks same rail re-snap
         }
       }
 
@@ -1261,6 +1265,7 @@ export class Player {
 
     for (const ramp of terrain.ramps) {
       if (ramp.type !== 'kicker') continue;
+      if (Math.abs(this.position.z - ramp.position.z) > 50) continue;
 
       // Check kicker ramp surface (skip during cooldown to prevent re-launch)
       if (this.kickerCooldown <= 0) {
@@ -1361,10 +1366,13 @@ export class Player {
 
   // ===== RAIL GRIND =====
   updateRailGrind(terrain, dt) {
-    if (this.grinding || this.grindExitTimer > 0) return;
+    if (this.grinding) return;
 
     for (const ramp of terrain.ramps) {
       if (ramp.type !== 'rail') continue;
+      if (Math.abs(this.position.z - ramp.position.z) > 50) continue;
+      // Skip any rail already grinded this run — prevents jitter re-snap
+      if (this._grindedRails.has(ramp)) continue;
 
       const dx = this.position.x - ramp.position.x;
       const dz = this.position.z - ramp.position.z;
@@ -1373,13 +1381,18 @@ export class Player {
       const railTop = terrainH + ramp.surfaceHeight;
       const dy = this.position.y - railTop;
 
+      const absDx = Math.abs(dx);
+      const absDz = Math.abs(dz);
+      const halfLen = ramp.length / 2 + 0.5;
+      const hitWidth = ramp.width + this.capsuleRadius;
+
       // Check if player is within rail XZ footprint
-      if (Math.abs(dx) < ramp.width + this.capsuleRadius &&
-          Math.abs(dz) < ramp.length / 2 + 0.5) {
+      if (absDx < hitWidth && absDz < halfLen) {
 
         if (!this.grounded && this.velocity.y <= 0 &&
                    dy > -1.0 && dy < 3.0) {
-          // Airborne descending player — snap onto rail (generous catch window)
+          // Airborne descending player — snap onto rail
+          // Only catch on the way DOWN so player can trick off kickers first
           // Must be within 20° of level (no headslides)
           const flipAbs = Math.abs(this.trickRotation.x % (Math.PI * 2));
           const rollAbs = Math.abs(this.trickRotation.z % (Math.PI * 2));
@@ -1395,24 +1408,13 @@ export class Player {
           this.grindTime = 0;
           this._initGrindFromAir();
           break;
-        } else if (!this.grounded && this.velocity.y > 0 &&
-                   dy > -0.5 && dy < 1.5) {
-          // Airborne ascending player passing through rail height — catch on the way up too
-          // Must be within 20° of level (no headslides)
-          const flipAbs2 = Math.abs(this.trickRotation.x % (Math.PI * 2));
-          const rollAbs2 = Math.abs(this.trickRotation.z % (Math.PI * 2));
-          const flipDev2 = Math.min(flipAbs2, Math.PI * 2 - flipAbs2);
-          const rollDev2 = Math.min(rollAbs2, Math.PI * 2 - rollAbs2);
-          if (flipDev2 > 0.349 || rollDev2 > 0.349) break; // too tilted — skip lock-on
-          this.position.y = railTop + 0.2;
-          this.velocity.y = 0;
-          this.grinding = true;
-          this.grindAborted = false;
-          this.grindRail = ramp;
-          this.peakHeight = 0;
-          this.grindTime = 0;
-          this._initGrindFromAir();
-          break;
+        }
+
+        // Grounded player hitting the actual rail body from the side — crash
+        // Use tight hitbox (0.5 units) matching the physical rail, not the wide footprint
+        if (this.grounded && absDx < 0.5 + this.capsuleRadius && this.position.y < railTop + 0.3) {
+          this.triggerCrash();
+          return;
         }
       }
     }
@@ -1830,6 +1832,7 @@ export class Player {
     this.grinding = false;
     this.grindAborted = false;
     this.grindRail = null;
+    this._grindedRails.clear();
     this.boardslideType = null;
     this.boardslideAngle = 0;
     this.grindTime = 0;
