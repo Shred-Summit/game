@@ -110,7 +110,7 @@ export class Player {
 
     // Stance depends on equipment — base values (overridden by stance/switch)
     this.BASE_STANCE_YAW = this.equipmentType === 'ski' ? 0 : 1.3;
-    this.BASE_HEAD_YAW = this.equipmentType === 'ski' ? 0 : -0.6;
+    this.BASE_HEAD_YAW = this.equipmentType === 'ski' ? 0 : 0.6;
     this.STANCE_YAW = this.BASE_STANCE_YAW;
     this.HEAD_YAW = this.BASE_HEAD_YAW;
 
@@ -254,68 +254,106 @@ export class Player {
     this.jacketLogoPlane.visible = false;
     this.riderGroup.add(this.jacketLogoPlane);
 
-    // Neck + Head — smaller head relative to body
+    // === HEAD — Riders Republic style: balaclava + helmet + big goggles ===
     this.neckGroup = new THREE.Group();
     this.neckGroup.position.set(0, 1.32, 0);
     this.riderGroup.add(this.neckGroup);
 
-    // Neck cylinder
-    const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.06, 8), skinMat);
-    neckMesh.position.set(0, 0.03, 0); this.neckGroup.add(neckMesh);
+    // Balaclava material — covers entire head/neck, no exposed skin
+    const balaclavaMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.95 });
+    const gaiterMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9 });
+
+    // Neck gaiter — visible tube between jacket collar and balaclava head
+    const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.10, 0.14, 10), gaiterMat);
+    neckMesh.position.set(0, 0.0, 0); this.neckGroup.add(neckMesh);
 
     this.headGroup = new THREE.Group();
     this.headGroup.rotation.y = this.HEAD_YAW;
     this.neckGroup.add(this.headGroup);
 
-    // Head — proportionally smaller (1/7.5 of body height)
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10), skinMat);
-    head.scale.set(1, 1.1, 0.95);
+    // Head base — fully covered by balaclava (no skin visible)
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.125, 14, 12), balaclavaMat);
+    head.scale.set(1, 1.05, 0.95);
     head.position.set(0, 0.15, 0); head.castShadow = true; this.headGroup.add(head);
 
-    // Chin/jaw
-    const jaw = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.55), skinMat);
-    jaw.position.set(0, 0.07, 0.03); jaw.scale.set(1, 0.65, 0.75); this.headGroup.add(jaw);
+    // Chin/jaw shape under balaclava
+    const jaw = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), balaclavaMat);
+    jaw.position.set(0, 0.08, 0.02); jaw.scale.set(1, 0.6, 0.7); this.headGroup.add(jaw);
 
-    // Ears
-    for (const side of [-1, 1]) {
-      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.03, 5, 4), skinMat);
-      ear.position.set(side * 0.12, 0.14, 0); ear.scale.set(0.5, 0.8, 0.6);
-      this.headGroup.add(ear);
-    }
+    // === Helmet — full coverage, sits on top of balaclava ===
+    this.helmetMat = new THREE.MeshStandardMaterial({ color: 0x212121, roughness: 0.4, metalness: 0.1 });
 
-    this.helmetMat = new THREE.MeshStandardMaterial({ color: 0x212121 });
+    // Main helmet shell — full rounded top
     this.helmetMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.55),
+      new THREE.SphereGeometry(0.145, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.52),
       this.helmetMat);
-    this.helmetMesh.position.set(0, 0.18, 0); this.headGroup.add(this.helmetMesh);
+    this.helmetMesh.position.set(0, 0.17, 0); this.headGroup.add(this.helmetMesh);
 
-    // Helmet brim — solid visor lip
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.135, 0.02, 14, 1, false, 0, Math.PI), this.helmetMat);
-    brim.position.set(0, 0.13, 0.08); brim.rotation.x = -0.3; brim.rotation.z = Math.PI;
+    // Helmet back lip — extends down to cover nape
+    const helmetBack = new THREE.Mesh(
+      new THREE.SphereGeometry(0.13, 10, 6, 0, Math.PI * 2, Math.PI * 0.3, Math.PI * 0.35),
+      this.helmetMat);
+    helmetBack.position.set(0, 0.15, -0.02); helmetBack.scale.set(1, 1, 1.1);
+    this.headGroup.add(helmetBack);
+
+    // Helmet brim — angular visor lip
+    const brim = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.015, 0.06), this.helmetMat);
+    brim.position.set(0, 0.135, 0.11); brim.rotation.x = -0.15;
     this.headGroup.add(brim);
 
-    // Hood bunched behind helmet — centered, solid lump at back of head
-    const hood = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), jacketMat);
-    hood.position.set(0, 0.12, -0.12); hood.scale.set(1.3, 0.7, 1.0);
+    // Helmet side vents (subtle detail)
+    for (const side of [-1, 1]) {
+      const vent = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.03, 0.04), this.helmetMat);
+      vent.position.set(side * 0.13, 0.2, 0.04);
+      this.headGroup.add(vent);
+    }
+
+    // Hood bunched behind helmet
+    const hood = new THREE.Mesh(new THREE.SphereGeometry(0.10, 8, 6), jacketMat);
+    hood.position.set(0, 0.12, -0.13); hood.scale.set(1.2, 0.65, 0.9);
     this.headGroup.add(hood);
     // Hood collar connecting to jacket neckline
     const hoodCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.12, 0.04, 10), jacketMat);
     hoodCollar.position.set(0, 0.04, -0.04);
     this.headGroup.add(hoodCollar);
 
-    // --- Halo mode (legendary helmet replacement): curly hair + floating halo ring ---
+    // === Halo mode hair — sculpted volume, not individual spheres ===
     this.hairGroup = new THREE.Group();
     this.hairGroup.visible = false;
     const hairMat = new THREE.MeshStandardMaterial({ color: 0x5c3317, roughness: 0.95 });
-    const curls = [
-      [0, 0.24, 0, 0.06], [-0.08, 0.22, 0.05, 0.05], [0.08, 0.22, 0.05, 0.05],
-      [0, 0.22, -0.07, 0.05], [-0.06, 0.26, -0.03, 0.045], [0.06, 0.26, -0.03, 0.045],
-      [-0.04, 0.27, 0.04, 0.04], [0.04, 0.27, 0.04, 0.04],
-    ];
-    for (const [x, y, z, r] of curls) {
-      const curl = new THREE.Mesh(new THREE.SphereGeometry(r, 6, 4), hairMat);
-      curl.position.set(x, y, z);
-      this.hairGroup.add(curl);
+
+    // Main hair volume — elongated cap sitting on top of head
+    const hairCap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), hairMat);
+    hairCap.position.set(0, 0.18, -0.01); hairCap.scale.set(1.05, 1.0, 1.1);
+    this.hairGroup.add(hairCap);
+
+    // Side volume — adds width for a messy/textured look
+    for (const side of [-1, 1]) {
+      const sideHair = new THREE.Mesh(
+        new THREE.SphereGeometry(0.07, 8, 6), hairMat);
+      sideHair.position.set(side * 0.09, 0.16, -0.02);
+      sideHair.scale.set(1, 1.1, 1.2);
+      this.hairGroup.add(sideHair);
+    }
+
+    // Back volume — hair flowing down the back
+    const backHair = new THREE.Mesh(
+      new THREE.SphereGeometry(0.10, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.6), hairMat);
+    backHair.position.set(0, 0.13, -0.08); backHair.scale.set(1, 1.1, 1.0);
+    backHair.rotation.x = 0.3;
+    this.hairGroup.add(backHair);
+
+    // Top texture ridges — suggests messy/wavy hair strands
+    for (let i = 0; i < 5; i++) {
+      const ridge = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.015, 0.10, 3, 6), hairMat);
+      ridge.position.set(-0.05 + i * 0.025, 0.26, -0.01 + Math.sin(i) * 0.02);
+      ridge.rotation.z = -0.3 + i * 0.15;
+      ridge.rotation.x = -0.2;
+      this.hairGroup.add(ridge);
     }
     this.headGroup.add(this.hairGroup);
 
@@ -333,24 +371,42 @@ export class Player {
     this._ponytailVelX = [];
     this._ponytailVelZ = [];
 
-    // Goggles — solid frame wrapping around face
-    const goggleMat = new THREE.MeshStandardMaterial({ color: 0xff9800, metalness: 0.7, roughness: 0.1 });
-    // Goggle frame — solid box shaped to wrap across face
-    const goggleFrame = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.055, 0.04, 1, 1, 1), goggleMat);
-    goggleFrame.position.set(0, 0.11, 0.10); this.headGroup.add(goggleFrame);
-    // Side wraps (left + right)
+    // === Goggles — black frame, lens tinted to jacket color ===
+    const goggleFrameMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6, metalness: 0.1 });
+
+    // Goggle frame — larger, rounded box wrapping across face
+    const goggleFrame = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.075, 0.05), goggleFrameMat);
+    goggleFrame.position.set(0, 0.125, 0.10); this.headGroup.add(goggleFrame);
+
+    // Top frame edge — thicker brow line
+    const goggleBrow = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.015, 0.04), goggleFrameMat);
+    goggleBrow.position.set(0, 0.165, 0.10); this.headGroup.add(goggleBrow);
+
+    // Side wraps — deeper, wrapping around the face
     for (const side of [-1, 1]) {
-      const sideWrap = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 0.08), goggleMat);
-      sideWrap.position.set(side * 0.12, 0.11, 0.07); this.headGroup.add(sideWrap);
+      const sideWrap = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.07, 0.10), goggleFrameMat);
+      sideWrap.position.set(side * 0.13, 0.125, 0.065); this.headGroup.add(sideWrap);
     }
-    // Goggle lens — reflective surface on front
-    const goggleLens = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.045),
-      new THREE.MeshStandardMaterial({ color: 0xff6600, metalness: 0.9, roughness: 0.05 }));
-    goggleLens.position.set(0, 0.11, 0.121); this.headGroup.add(goggleLens);
-    // Goggle strap — solid band around back of head
+
+    // Goggle lens — tinted to match jacket color, sits proud of frame
+    const lensColor = this.jacketMat.color.clone().lerp(new THREE.Color(0xffffff), 0.3);
+    this.goggleLensMat = new THREE.MeshStandardMaterial({
+      color: lensColor, emissive: this.jacketMat.color.clone().multiplyScalar(0.15),
+      metalness: 0.85, roughness: 0.08 });
+    const goggleLens = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.065, 0.015), this.goggleLensMat);
+    goggleLens.position.set(0, 0.125, 0.13); this.headGroup.add(goggleLens);
+
+    // Foam padding visible at bottom edge
+    const goggleFoam = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.012, 0.03),
+      new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 1.0 }));
+    goggleFoam.position.set(0, 0.085, 0.095); this.headGroup.add(goggleFoam);
+
+    // Goggle strap — thick band around back of head
     const strapMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
-    const goggleStrap = new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.135, 0.02, 14, 1, true, Math.PI * 0.3, Math.PI * 1.4), strapMat);
-    goggleStrap.position.set(0, 0.11, 0); goggleStrap.rotation.x = Math.PI / 2;
+    const goggleStrap = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14, 0.14, 0.035, 14, 1, true, Math.PI * 0.25, Math.PI * 1.5), strapMat);
+    goggleStrap.position.set(0, 0.125, 0); goggleStrap.rotation.x = Math.PI / 2;
     this.headGroup.add(goggleStrap);
 
     // === SEGMENTED ARMS — longer, slimmer ===
@@ -1945,6 +2001,11 @@ export class Player {
         // Darken fold material to match new jacket color
         if (this._jacketFoldMat) {
           this._jacketFoldMat.color.copy(color).multiplyScalar(0.75);
+        }
+        // Update goggle lens tint to match jacket (brightened)
+        if (this.goggleLensMat) {
+          this.goggleLensMat.color.copy(color).lerp(new THREE.Color(0xffffff), 0.3);
+          this.goggleLensMat.emissive.copy(color).multiplyScalar(0.15);
         }
         break;
       case 'pants':
