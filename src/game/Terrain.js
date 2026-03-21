@@ -205,6 +205,9 @@ export class Terrain {
     this.barrierMaterial = new THREE.MeshStandardMaterial({
       color: 0xdd3333, roughness: 0.6, metalness: 0.1,
     });
+    this.streetLightBulbMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffcc, emissive: 0xffdd88, emissiveIntensity: 0.6,
+    });
 
     // Floodlight materials (used day and night, but lights only active at night)
     this.floodlightPoleMaterial = new THREE.MeshStandardMaterial({
@@ -283,7 +286,8 @@ export class Terrain {
     mesh.receiveShadow = true;
     this.scene.add(mesh);
 
-    const chunk = { mesh, zOffset, yOffset, objects: [] };
+    const chunkId = this.chunksGenerated;
+    const chunk = { mesh, zOffset, yOffset, objects: [], chunkId };
 
     // Exclusion zones — global, persists across chunks
 
@@ -355,7 +359,7 @@ export class Terrain {
         const rampData = {
           mesh: feature,
           position: new THREE.Vector3(x, minY, featureGlobalZ),
-          type, width, length, size, lipHeight, lipAngle, surfaceHeight: 0,
+          type, width, length, size, lipHeight, lipAngle, surfaceHeight: 0, chunkId,
         };
 
         if (feature.userData.landing) {
@@ -417,7 +421,7 @@ export class Terrain {
         mesh: feature,
         position: new THREE.Vector3(bx, bMinY, booterGlobalZ),
         type: 'kicker', width: bWidth, length: bLength, size: 'massive',
-        lipHeight: 2.0 * bScale, lipAngle: 0.65, surfaceHeight: 0,
+        lipHeight: 2.0 * bScale, lipAngle: 0.65, surfaceHeight: 0, chunkId,
       };
 
       if (feature.userData.landing) {
@@ -505,7 +509,7 @@ export class Terrain {
         mesh: feature,
         position: new THREE.Vector3(x, midY, featureGlobalZ),
         type: 'rail', width, length, surfaceHeight,
-        lipHeight: 0, lipAngle: 0,
+        lipHeight: 0, lipAngle: 0, chunkId,
       });
 
       // Register gap-on kicker for collision
@@ -521,7 +525,7 @@ export class Terrain {
           length: lip.length,
           lipHeight: lip.height,
           lipAngle: 0.35,
-          surfaceHeight: 0,
+          surfaceHeight: 0, chunkId,
         });
       }
 
@@ -554,7 +558,7 @@ export class Terrain {
         chunk.objects.push(building);
         this.obstacles.push({
           position: new THREE.Vector3(x, y, globalZ),
-          radius: 4.0, type: 'rock',
+          radius: 4.0, type: 'rock', chunkId,
         });
       }
 
@@ -573,7 +577,7 @@ export class Terrain {
         chunk.objects.push(light);
         this.obstacles.push({
           position: new THREE.Vector3(x, y, globalZ),
-          radius: 0.5, type: 'tree',
+          radius: 0.5, type: 'tree', chunkId,
         });
       }
 
@@ -613,7 +617,7 @@ export class Terrain {
         chunk.objects.push(tree);
         this.obstacles.push({
           position: new THREE.Vector3(x, y, globalZ),
-          radius: 1.2, type: 'tree',
+          radius: 1.2, type: 'tree', chunkId,
         });
       }
 
@@ -632,7 +636,7 @@ export class Terrain {
         chunk.objects.push(rock);
         this.obstacles.push({
           position: new THREE.Vector3(x, y, globalZ),
-          radius: 2.0, type: 'rock',
+          radius: 2.0, type: 'rock', chunkId,
         });
       }
     }
@@ -651,7 +655,7 @@ export class Terrain {
       chunk.objects.push(light);
       this.obstacles.push({
         position: new THREE.Vector3(x, y, globalZ),
-        radius: 0.5, type: 'tree',
+        radius: 0.5, type: 'tree', chunkId,
       });
     }
 
@@ -1666,9 +1670,7 @@ export class Terrain {
     // Light fixture (bulb)
     const bulb = new THREE.Mesh(
       new THREE.SphereGeometry(0.2, 6, 6),
-      new THREE.MeshStandardMaterial({
-        color: 0xffffcc, emissive: 0xffdd88, emissiveIntensity: 0.6,
-      })
+      this.streetLightBulbMaterial
     );
     bulb.position.set(-side * armLength, poleHeight - 0.3, 0);
     group.add(bulb);
@@ -1995,6 +1997,10 @@ export class Terrain {
       this.scene.remove(old.mesh);
       old.mesh.geometry.dispose();
       for (const obj of old.objects) this.scene.remove(obj);
+      // Purge ramps and obstacles belonging to this chunk
+      const cid = old.chunkId;
+      this.ramps = this.ramps.filter(r => r.chunkId !== cid);
+      this.obstacles = this.obstacles.filter(o => o.chunkId !== cid);
     }
   }
 
