@@ -70,7 +70,7 @@ export class Game {
       this.mobileLookDir = new THREE.Vector3(0, -6, -8); // fixed angle relative to camera
       this.baseFOV = 45;
     } else {
-      this.cameraOffset = new THREE.Vector3(0, 4, 6);
+      this.cameraOffset = new THREE.Vector3(0, 3, 4);
       this.cameraLookAhead = new THREE.Vector3(0, -2, -20);
       this.baseFOV = 60;
     }

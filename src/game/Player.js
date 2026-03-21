@@ -35,6 +35,8 @@ export class Player {
     this.trickRotation = new THREE.Vector3(0, 0, 0);
     this.isGrabbing = false;
     this.grabType = null;
+    this.wasGrabbing = false;
+    this.grabWindup = 0; // wind-up timer before grab pose connects
     this.wasGrounded = false;
     this.isTucking = false;
 
@@ -128,6 +130,48 @@ export class Player {
     joint.rotation[axis] = THREE.MathUtils.lerp(joint.rotation[axis], target, speed);
   }
 
+  updatePonytail(dt) {
+    if (!this.ponytailJoints || this.ponytailJoints.length === 0) return;
+    const speed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+    // Wind direction: ponytail trails opposite to velocity (in local head space)
+    // Use a simplified world-to-local approximation via heading
+    const cos = Math.cos(this.visualYaw);
+    const sin = Math.sin(this.visualYaw);
+    const localVz = this.velocity.x * sin + this.velocity.z * cos;
+    const localVx = this.velocity.x * cos - this.velocity.z * sin;
+
+    for (let i = 0; i < this.ponytailJoints.length; i++) {
+      const joint = this.ponytailJoints[i];
+      const segFactor = (i + 1) * 0.35; // progressive lag per segment
+      const lerpSpeed = 0.12 - i * 0.03; // slower for tip (whip effect)
+
+      // Spring target: trail behind based on velocity
+      let targetX = -localVz * 0.04 * segFactor + this.velocity.y * 0.03 * segFactor;
+      let targetZ = localVx * 0.03 * segFactor;
+
+      // Clamp targets to prevent extreme angles
+      targetX = THREE.MathUtils.clamp(targetX, -0.8, 0.8);
+      targetZ = THREE.MathUtils.clamp(targetZ, -0.5, 0.5);
+
+      // Damped spring
+      const springK = 8;
+      const damping = 4;
+      const dx = targetX - joint.rotation.x;
+      const dz = targetZ - joint.rotation.z;
+      this._ponytailVelX[i] += dx * springK * dt;
+      this._ponytailVelZ[i] += dz * springK * dt;
+      this._ponytailVelX[i] *= Math.max(0, 1 - damping * dt);
+      this._ponytailVelZ[i] *= Math.max(0, 1 - damping * dt);
+      joint.rotation.x += this._ponytailVelX[i] * dt;
+      joint.rotation.z += this._ponytailVelZ[i] * dt;
+
+      // Gravity pull — ponytail hangs down slightly when slow
+      if (speed < 5) {
+        joint.rotation.x = THREE.MathUtils.lerp(joint.rotation.x, 0.1 * segFactor, lerpSpeed);
+      }
+    }
+  }
+
   // Materials stored for color customization
   buildModel() {
     this.boardMat = new THREE.MeshStandardMaterial({ color: 0x1565c0, roughness: 0.2, metalness: 0.5 });
@@ -139,7 +183,9 @@ export class Player {
       this.buildSnowboard();
     }
 
-    // === RIDER ===
+    // === RIDER — realistic human proportions ===
+    // Total height ~1.75 units (feet to top of head)
+    // Proportions: head=0.22, neck=0.08, torso=0.55, legs=0.90
     this.jacketMat = new THREE.MeshStandardMaterial({ color: 0xd32f2f, roughness: 0.8 });
     this.pantsMat = new THREE.MeshStandardMaterial({ color: 0x263238, roughness: 0.9 });
     const jacketMat = this.jacketMat;
@@ -151,13 +197,50 @@ export class Player {
     // Stance rotation
     this.riderGroup.rotation.y = this.STANCE_YAW;
 
-    // Hips
-    this.hipsMesh = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.18, 0.22), pantsMat);
-    this.hipsMesh.position.set(0, 0.55, 0); this.riderGroup.add(this.hipsMesh);
+    // Hips / pelvis — wide oval
+    this.hipsMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.05, 5, 10), pantsMat);
+    this.hipsMesh.scale.set(1.0, 0.8, 0.7);
+    this.hipsMesh.position.set(0, 0.62, 0); this.riderGroup.add(this.hipsMesh);
 
-    // Torso
-    this.torsoMesh = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.25), jacketMat);
-    this.torsoMesh.position.set(0, 0.85, 0); this.torsoMesh.castShadow = true; this.riderGroup.add(this.torsoMesh);
+    // Lower torso / waist — baggy jacket hangs wide
+    const waistMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.12, 5, 10), jacketMat);
+    waistMesh.scale.set(1, 1, 0.7);
+    waistMesh.position.set(0, 0.82, 0); this.riderGroup.add(waistMesh);
+
+    // Upper torso / chest — puffy jacket, broader
+    this.torsoMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.21, 0.22, 6, 10), jacketMat);
+    this.torsoMesh.scale.set(1.05, 1, 0.75);
+    this.torsoMesh.position.set(0, 1.05, 0); this.torsoMesh.castShadow = true;
+    this.riderGroup.add(this.torsoMesh);
+
+    // Jacket wrinkle/fold lines — subtle ridges for fabric detail
+    const jacketFoldMat = new THREE.MeshStandardMaterial({
+      color: 0xb71c1c, roughness: 0.85 // slightly darker than jacket for shadow in folds
+    });
+    this._jacketFoldMat = jacketFoldMat; // keep ref for color sync
+
+    // Horizontal fold ridges across torso (fabric bunching) — thin solid bands
+    for (const y of [0.92, 1.0, 1.1]) {
+      const fold = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.014, 14), jacketFoldMat);
+      fold.position.set(0, y, 0); this.riderGroup.add(fold);
+    }
+    // Vertical seam lines on torso (side seams)
+    for (const x of [-0.19, 0.19]) {
+      const seam = new THREE.Mesh(new THREE.CapsuleGeometry(0.006, 0.28, 3, 4), jacketFoldMat);
+      seam.position.set(x, 1.02, 0.06); this.riderGroup.add(seam);
+    }
+    // Center front zipper line
+    const zipper = new THREE.Mesh(new THREE.CapsuleGeometry(0.005, 0.35, 3, 4),
+      new THREE.MeshStandardMaterial({ color: 0x666666, metalness: 0.5, roughness: 0.3 }));
+    zipper.position.set(0, 1.0, 0.155); this.riderGroup.add(zipper);
+
+    // Jacket collar at neckline
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 0.06, 10, 1, true), jacketMat);
+    collar.position.set(0, 1.28, 0); this.riderGroup.add(collar);
+
+    // Jacket waist band / hem — solid band
+    const waistBand = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.19, 0.035, 12), jacketMat);
+    waistBand.position.set(0, 0.74, 0); this.riderGroup.add(waistBand);
 
     // Jacket brand logo decal (thin plane on chest)
     this.jacketLogoMat = new THREE.MeshStandardMaterial({
@@ -165,38 +248,69 @@ export class Player {
       polygonOffset: true, polygonOffsetFactor: -1,
     });
     this.jacketLogoPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.32, 0.22), this.jacketLogoMat
+      new THREE.PlaneGeometry(0.26, 0.18), this.jacketLogoMat
     );
-    this.jacketLogoPlane.position.set(0, 0.85, 0.126);
+    this.jacketLogoPlane.position.set(0, 1.05, 0.13);
     this.jacketLogoPlane.visible = false;
     this.riderGroup.add(this.jacketLogoPlane);
 
-    // Neck + Head
+    // Neck + Head — smaller head relative to body
     this.neckGroup = new THREE.Group();
-    this.neckGroup.position.set(0, 1.15, 0);
+    this.neckGroup.position.set(0, 1.32, 0);
     this.riderGroup.add(this.neckGroup);
+
+    // Neck cylinder
+    const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.06, 8), skinMat);
+    neckMesh.position.set(0, 0.03, 0); this.neckGroup.add(neckMesh);
 
     this.headGroup = new THREE.Group();
     this.headGroup.rotation.y = this.HEAD_YAW;
     this.neckGroup.add(this.headGroup);
 
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6), skinMat);
-    head.position.set(0, 0.17, 0); head.castShadow = true; this.headGroup.add(head);
+    // Head — proportionally smaller (1/7.5 of body height)
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10), skinMat);
+    head.scale.set(1, 1.1, 0.95);
+    head.position.set(0, 0.15, 0); head.castShadow = true; this.headGroup.add(head);
+
+    // Chin/jaw
+    const jaw = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.55), skinMat);
+    jaw.position.set(0, 0.07, 0.03); jaw.scale.set(1, 0.65, 0.75); this.headGroup.add(jaw);
+
+    // Ears
+    for (const side of [-1, 1]) {
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.03, 5, 4), skinMat);
+      ear.position.set(side * 0.12, 0.14, 0); ear.scale.set(0.5, 0.8, 0.6);
+      this.headGroup.add(ear);
+    }
 
     this.helmetMat = new THREE.MeshStandardMaterial({ color: 0x212121 });
     this.helmetMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.18, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.55),
+      new THREE.SphereGeometry(0.14, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.55),
       this.helmetMat);
-    this.helmetMesh.position.set(0, 0.21, 0); this.headGroup.add(this.helmetMesh);
+    this.helmetMesh.position.set(0, 0.18, 0); this.headGroup.add(this.helmetMesh);
+
+    // Helmet brim — solid visor lip
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.135, 0.02, 14, 1, false, 0, Math.PI), this.helmetMat);
+    brim.position.set(0, 0.13, 0.08); brim.rotation.x = -0.3; brim.rotation.z = Math.PI;
+    this.headGroup.add(brim);
+
+    // Hood bunched behind helmet — centered, solid lump at back of head
+    const hood = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), jacketMat);
+    hood.position.set(0, 0.12, -0.12); hood.scale.set(1.3, 0.7, 1.0);
+    this.headGroup.add(hood);
+    // Hood collar connecting to jacket neckline
+    const hoodCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.12, 0.04, 10), jacketMat);
+    hoodCollar.position.set(0, 0.04, -0.04);
+    this.headGroup.add(hoodCollar);
 
     // --- Halo mode (legendary helmet replacement): curly hair + floating halo ring ---
     this.hairGroup = new THREE.Group();
     this.hairGroup.visible = false;
     const hairMat = new THREE.MeshStandardMaterial({ color: 0x5c3317, roughness: 0.95 });
     const curls = [
-      [0, 0.28, 0, 0.07], [-0.09, 0.26, 0.06, 0.06], [0.09, 0.26, 0.06, 0.06],
-      [0, 0.26, -0.08, 0.06], [-0.07, 0.3, -0.04, 0.055], [0.07, 0.3, -0.04, 0.055],
-      [-0.05, 0.31, 0.05, 0.05], [0.05, 0.31, 0.05, 0.05],
+      [0, 0.24, 0, 0.06], [-0.08, 0.22, 0.05, 0.05], [0.08, 0.22, 0.05, 0.05],
+      [0, 0.22, -0.07, 0.05], [-0.06, 0.26, -0.03, 0.045], [0.06, 0.26, -0.03, 0.045],
+      [-0.04, 0.27, 0.04, 0.04], [0.04, 0.27, 0.04, 0.04],
     ];
     for (const [x, y, z, r] of curls) {
       const curl = new THREE.Mesh(new THREE.SphereGeometry(r, 6, 4), hairMat);
@@ -206,64 +320,124 @@ export class Player {
     this.headGroup.add(this.hairGroup);
 
     this.haloMesh = new THREE.Mesh(
-      new THREE.TorusGeometry(0.2, 0.02, 8, 24),
+      new THREE.TorusGeometry(0.17, 0.018, 8, 24),
       new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffd700, emissiveIntensity: 0.5, metalness: 0.9, roughness: 0.1 })
     );
     this.haloMesh.rotation.x = -Math.PI / 2;
-    this.haloMesh.position.set(0, 0.4, 0);
+    this.haloMesh.position.set(0, 0.35, 0);
     this.haloMesh.visible = false;
     this.headGroup.add(this.haloMesh);
 
-    const goggles = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, 0.08),
-      new THREE.MeshStandardMaterial({ color: 0xff9800, metalness: 0.7, roughness: 0.1 }));
-    goggles.position.set(0, 0.17, 0.14); this.headGroup.add(goggles);
+    // Ponytail removed — physics update guarded by empty joints check
+    this.ponytailJoints = [];
+    this._ponytailVelX = [];
+    this._ponytailVelZ = [];
 
-    // === SEGMENTED ARMS ===
-    // Left arm: shoulderL → upperArmL → elbowL → forearmL → gloveL
+    // Goggles — solid frame wrapping around face
+    const goggleMat = new THREE.MeshStandardMaterial({ color: 0xff9800, metalness: 0.7, roughness: 0.1 });
+    // Goggle frame — solid box shaped to wrap across face
+    const goggleFrame = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.055, 0.04, 1, 1, 1), goggleMat);
+    goggleFrame.position.set(0, 0.11, 0.10); this.headGroup.add(goggleFrame);
+    // Side wraps (left + right)
+    for (const side of [-1, 1]) {
+      const sideWrap = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 0.08), goggleMat);
+      sideWrap.position.set(side * 0.12, 0.11, 0.07); this.headGroup.add(sideWrap);
+    }
+    // Goggle lens — reflective surface on front
+    const goggleLens = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.045),
+      new THREE.MeshStandardMaterial({ color: 0xff6600, metalness: 0.9, roughness: 0.05 }));
+    goggleLens.position.set(0, 0.11, 0.121); this.headGroup.add(goggleLens);
+    // Goggle strap — solid band around back of head
+    const strapMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
+    const goggleStrap = new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.135, 0.02, 14, 1, true, Math.PI * 0.3, Math.PI * 1.4), strapMat);
+    goggleStrap.position.set(0, 0.11, 0); goggleStrap.rotation.x = Math.PI / 2;
+    this.headGroup.add(goggleStrap);
+
+    // === SEGMENTED ARMS — longer, slimmer ===
+    // Left arm
     this.shoulderL = new THREE.Group();
-    this.shoulderL.position.set(-0.28, 1.05, 0);
+    this.shoulderL.position.set(-0.22, 1.22, 0);
     this.riderGroup.add(this.shoulderL);
 
-    const upperArmL = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.16, 4, 6), jacketMat);
-    upperArmL.position.set(0, -0.12, 0); upperArmL.castShadow = true;
+    const shoulderCapL = new THREE.Mesh(new THREE.SphereGeometry(0.065, 6, 5), jacketMat);
+    this.shoulderL.add(shoulderCapL);
+
+    const upperArmL = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.22, 5, 8), jacketMat);
+    upperArmL.position.set(0, -0.15, 0); upperArmL.castShadow = true;
     this.shoulderL.add(upperArmL);
 
     this.elbowL = new THREE.Group();
-    this.elbowL.position.set(0, -0.24, 0);
+    this.elbowL.position.set(0, -0.3, 0);
     this.shoulderL.add(this.elbowL);
 
-    const forearmL = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.14, 4, 6), jacketMat);
-    forearmL.position.set(0, -0.11, 0); forearmL.castShadow = true;
+    // Elbow joint ball
+    const elbowBallL = new THREE.Mesh(new THREE.SphereGeometry(0.055, 5, 4), jacketMat);
+    this.elbowL.add(elbowBallL);
+
+    // Elbow crease wrinkles (inside of bend)
+    const elbowCreaseL1 = new THREE.Mesh(new THREE.CapsuleGeometry(0.004, 0.04, 3, 4), jacketFoldMat);
+    elbowCreaseL1.position.set(0, 0.01, 0.035); elbowCreaseL1.rotation.z = Math.PI / 2;
+    this.elbowL.add(elbowCreaseL1);
+    const elbowCreaseL2 = new THREE.Mesh(new THREE.CapsuleGeometry(0.003, 0.035, 3, 4), jacketFoldMat);
+    elbowCreaseL2.position.set(0, -0.01, 0.03); elbowCreaseL2.rotation.z = Math.PI / 2;
+    this.elbowL.add(elbowCreaseL2);
+
+    const forearmL = new THREE.Mesh(new THREE.CapsuleGeometry(0.058, 0.2, 5, 8), jacketMat);
+    forearmL.position.set(0, -0.14, 0); forearmL.castShadow = true;
     this.elbowL.add(forearmL);
 
-    const gloveL = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), this.gloveMat);
-    gloveL.position.set(0, -0.22, 0);
-    this.elbowL.add(gloveL);
+    // Sleeve cuff
+    const cuffL = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.052, 0.025, 8), jacketMat);
+    cuffL.position.set(0, -0.26, 0); this.elbowL.add(cuffL);
 
-    // Right arm: shoulderR → upperArmR → elbowR → forearmR → gloveR
+    // Glove — mitten with thumb
+    const gloveL = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.04, 4, 6), this.gloveMat);
+    gloveL.scale.set(1, 1, 0.8);
+    gloveL.position.set(0, -0.3, 0); this.elbowL.add(gloveL);
+    const thumbL = new THREE.Mesh(new THREE.SphereGeometry(0.018, 4, 3), this.gloveMat);
+    thumbL.position.set(-0.035, -0.28, 0.01); this.elbowL.add(thumbL);
+
+    // Right arm
     this.shoulderR = new THREE.Group();
-    this.shoulderR.position.set(0.28, 1.05, 0);
+    this.shoulderR.position.set(0.22, 1.22, 0);
     this.riderGroup.add(this.shoulderR);
 
-    const upperArmR = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.16, 4, 6), jacketMat);
-    upperArmR.position.set(0, -0.12, 0); upperArmR.castShadow = true;
+    const shoulderCapR = new THREE.Mesh(new THREE.SphereGeometry(0.065, 6, 5), jacketMat);
+    this.shoulderR.add(shoulderCapR);
+
+    const upperArmR = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.22, 5, 8), jacketMat);
+    upperArmR.position.set(0, -0.15, 0); upperArmR.castShadow = true;
     this.shoulderR.add(upperArmR);
 
     this.elbowR = new THREE.Group();
-    this.elbowR.position.set(0, -0.24, 0);
+    this.elbowR.position.set(0, -0.3, 0);
     this.shoulderR.add(this.elbowR);
 
-    const forearmR = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.14, 4, 6), jacketMat);
-    forearmR.position.set(0, -0.11, 0); forearmR.castShadow = true;
+    const elbowBallR = new THREE.Mesh(new THREE.SphereGeometry(0.055, 5, 4), jacketMat);
+    this.elbowR.add(elbowBallR);
+
+    const elbowCreaseR1 = new THREE.Mesh(new THREE.CapsuleGeometry(0.004, 0.04, 3, 4), jacketFoldMat);
+    elbowCreaseR1.position.set(0, 0.01, 0.035); elbowCreaseR1.rotation.z = Math.PI / 2;
+    this.elbowR.add(elbowCreaseR1);
+    const elbowCreaseR2 = new THREE.Mesh(new THREE.CapsuleGeometry(0.003, 0.035, 3, 4), jacketFoldMat);
+    elbowCreaseR2.position.set(0, -0.01, 0.03); elbowCreaseR2.rotation.z = Math.PI / 2;
+    this.elbowR.add(elbowCreaseR2);
+
+    const forearmR = new THREE.Mesh(new THREE.CapsuleGeometry(0.058, 0.2, 5, 8), jacketMat);
+    forearmR.position.set(0, -0.14, 0); forearmR.castShadow = true;
     this.elbowR.add(forearmR);
 
-    const gloveR = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), this.gloveMat);
-    gloveR.position.set(0, -0.22, 0);
-    this.elbowR.add(gloveR);
+    const cuffR = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.052, 0.025, 8), jacketMat);
+    cuffR.position.set(0, -0.26, 0); this.elbowR.add(cuffR);
 
-    // Default arm pose — arms spread OUTWARD from body
+    const gloveR = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.04, 4, 6), this.gloveMat);
+    gloveR.scale.set(1, 1, 0.8);
+    gloveR.position.set(0, -0.3, 0); this.elbowR.add(gloveR);
+    const thumbR = new THREE.Mesh(new THREE.SphereGeometry(0.018, 4, 3), this.gloveMat);
+    thumbR.position.set(0.035, -0.28, 0.01); this.elbowR.add(thumbR);
+
+    // Default arm pose
     if (this.equipmentType === 'ski') {
-      // Ski: moderate spread for holding poles, slight forward lean
       this.shoulderL.rotation.z = -0.75;
       this.shoulderL.rotation.x = 0.2;
       this.elbowL.rotation.x = -0.3;
@@ -271,13 +445,12 @@ export class Player {
       this.shoulderR.rotation.x = 0.2;
       this.elbowR.rotation.x = -0.3;
     } else {
-      // Snowboard: arms angled out and down for balance
-      this.shoulderL.rotation.z = -0.7;
+      this.shoulderL.rotation.z = -0.35;
       this.shoulderL.rotation.x = 0.15;
-      this.elbowL.rotation.x = -0.3;
-      this.shoulderR.rotation.z = 0.7;
+      this.elbowL.rotation.x = -0.4;
+      this.shoulderR.rotation.z = 0.35;
       this.shoulderR.rotation.x = 0.15;
-      this.elbowR.rotation.x = -0.3;
+      this.elbowR.rotation.x = -0.4;
     }
 
     // Ski poles (attached to forearms)
@@ -285,51 +458,143 @@ export class Player {
       this.buildPoles();
     }
 
-    // === SEGMENTED LEGS ===
+    // === SEGMENTED LEGS — longer, realistic proportions ===
     const isSki = this.equipmentType === 'ski';
-    // Left leg: hipL → thighL → kneeL → calfL → bootL
+
+    // Pants wrinkle material — slightly darker for fold shadows
+    // Fold materials — darker shade for creases, lighter highlight for ridges
+    const pantsFoldMat = new THREE.MeshStandardMaterial({ color: 0x1a252e, roughness: 0.95 });
+    this._pantsFoldMat = pantsFoldMat;
+    const pantsRidgeMat = new THREE.MeshStandardMaterial({ color: 0x2e3d45, roughness: 0.75 });
+    const pantsSeamMat = new THREE.MeshStandardMaterial({ color: 0x1e2a30, roughness: 0.98 });
+
+    // Helper: add wrinkle detail to a leg
+    this._pantsWrinkles = this._pantsWrinkles || [];
+    const addLegWrinkles = (hipGroup, kneeGroup, side) => {
+      // --- THIGH ---
+      // Horizontal fabric folds (bunching from movement)
+      for (const y of [-0.04, -0.12, -0.20, -0.27]) {
+        const fold = new THREE.Mesh(new THREE.TorusGeometry(0.095, 0.012, 4, 12), pantsFoldMat);
+        fold.rotation.x = Math.PI / 2; fold.position.set(0, y, 0);
+        fold.userData.pantsWrinkle = true;
+        hipGroup.add(fold); this._pantsWrinkles.push(fold);
+      }
+      // Ridge highlights between folds (catch light on top of wrinkle)
+      for (const y of [-0.08, -0.16, -0.24]) {
+        const ridge = new THREE.Mesh(new THREE.TorusGeometry(0.098, 0.007, 4, 12), pantsRidgeMat);
+        ridge.rotation.x = Math.PI / 2; ridge.position.set(0, y, 0);
+        ridge.userData.pantsWrinkle = true;
+        hipGroup.add(ridge); this._pantsWrinkles.push(ridge);
+      }
+      // Outer seam line (vertical stitch down outside of thigh)
+      const outerSeam = new THREE.Mesh(new THREE.CapsuleGeometry(0.005, 0.28, 3, 4), pantsSeamMat);
+      outerSeam.position.set(side * 0.095, -0.15, 0);
+      outerSeam.userData.pantsWrinkle = true;
+      hipGroup.add(outerSeam); this._pantsWrinkles.push(outerSeam);
+      // Inner seam
+      const innerSeam = new THREE.Mesh(new THREE.CapsuleGeometry(0.005, 0.28, 3, 4), pantsSeamMat);
+      innerSeam.position.set(side * -0.095, -0.15, 0);
+      innerSeam.userData.pantsWrinkle = true;
+      hipGroup.add(innerSeam); this._pantsWrinkles.push(innerSeam);
+      // Diagonal stress creases on front thigh (from knee bend)
+      for (const [y, angle] of [[-0.10, 0.4], [-0.22, -0.3]]) {
+        const crease = new THREE.Mesh(new THREE.CapsuleGeometry(0.005, 0.08, 3, 4), pantsFoldMat);
+        crease.position.set(0, y, 0.08);
+        crease.rotation.z = angle; crease.rotation.y = Math.PI / 2;
+        crease.userData.pantsWrinkle = true;
+        hipGroup.add(crease); this._pantsWrinkles.push(crease);
+      }
+
+      // --- KNEE ---
+      // Behind-knee crease folds (3 creases for more realism)
+      for (const [y, r, len] of [[0.015, 0.009, 0.09], [-0.01, 0.008, 0.08], [-0.03, 0.007, 0.07]]) {
+        const crease = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 3, 5), pantsFoldMat);
+        crease.position.set(0, y, -0.07); crease.rotation.z = Math.PI / 2;
+        crease.userData.pantsWrinkle = true;
+        kneeGroup.add(crease); this._pantsWrinkles.push(crease);
+      }
+      // Front knee stress crease (fabric pulling when bent)
+      const frontKneeCrease = new THREE.Mesh(new THREE.CapsuleGeometry(0.005, 0.07, 3, 4), pantsRidgeMat);
+      frontKneeCrease.position.set(0, 0, 0.075); frontKneeCrease.rotation.z = Math.PI / 2;
+      frontKneeCrease.userData.pantsWrinkle = true;
+      kneeGroup.add(frontKneeCrease); this._pantsWrinkles.push(frontKneeCrease);
+
+      // --- CALF ---
+      // Horizontal folds (more of them, varied spacing)
+      for (const y of [-0.05, -0.12, -0.19, -0.25]) {
+        const fold = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.010, 4, 12), pantsFoldMat);
+        fold.rotation.x = Math.PI / 2; fold.position.set(0, y, 0);
+        fold.userData.pantsWrinkle = true;
+        kneeGroup.add(fold); this._pantsWrinkles.push(fold);
+      }
+      // Ridge highlights on calves
+      for (const y of [-0.08, -0.16]) {
+        const ridge = new THREE.Mesh(new THREE.TorusGeometry(0.082, 0.006, 4, 12), pantsRidgeMat);
+        ridge.rotation.x = Math.PI / 2; ridge.position.set(0, y, 0);
+        ridge.userData.pantsWrinkle = true;
+        kneeGroup.add(ridge); this._pantsWrinkles.push(ridge);
+      }
+      // Outer calf seam
+      const calfSeam = new THREE.Mesh(new THREE.CapsuleGeometry(0.005, 0.25, 3, 4), pantsSeamMat);
+      calfSeam.position.set(side * 0.08, -0.15, 0);
+      calfSeam.userData.pantsWrinkle = true;
+      kneeGroup.add(calfSeam); this._pantsWrinkles.push(calfSeam);
+    };
+
+    // Left leg (front foot) — hip over front binding
     this.hipL = new THREE.Group();
-    this.hipL.position.set(isSki ? -0.12 : -0.1, 0.48, isSki ? 0 : 0.08);
+    this.hipL.position.set(isSki ? -0.1 : -0.14, 0.62, isSki ? 0 : 0.05);
     this.riderGroup.add(this.hipL);
 
-    this.thighL = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.16, 3, 6), pantsMat);
-    this.thighL.position.set(0, -0.1, 0); this.thighL.castShadow = true;
+    // Thigh — long capsule that overlaps up into hips and down past knee pivot
+    this.thighL = new THREE.Mesh(new THREE.CapsuleGeometry(0.095, 0.30, 5, 8), pantsMat);
+    this.thighL.position.set(0, -0.20, 0); this.thighL.castShadow = true;
     this.hipL.add(this.thighL);
 
     this.kneeL = new THREE.Group();
-    this.kneeL.position.set(0, -0.22, 0);
+    this.kneeL.position.set(0, -0.34, 0);
     this.hipL.add(this.kneeL);
 
-    this.calfL = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.16, 3, 6), pantsMat);
-    this.calfL.position.set(0, -0.1, 0); this.calfL.castShadow = true;
+    // Calf — overlaps up past knee pivot for seamless joint
+    this.calfL = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.28, 5, 8), pantsMat);
+    this.calfL.position.set(0, -0.14, 0); this.calfL.castShadow = true;
     this.kneeL.add(this.calfL);
 
-    const bootL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.18), this.bootMat);
-    bootL.position.set(0, -0.22, 0.03);
-    this.kneeL.add(bootL);
+    addLegWrinkles(this.hipL, this.kneeL, -1);
 
-    // Right leg: hipR → thighR → kneeR → calfR → bootR
+    // Boot — positioned to sit inside binding
+    const bootBodyL = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.05, 4, 6), this.bootMat);
+    bootBodyL.scale.set(1, 1, 1.2);
+    bootBodyL.position.set(0, -0.30, 0.01); this.kneeL.add(bootBodyL);
+    const soleL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 0.18), this.bootMat);
+    soleL.position.set(0, -0.34, 0.02); this.kneeL.add(soleL);
+
+    // Right leg (rear foot) — hip over rear binding
     this.hipR = new THREE.Group();
-    this.hipR.position.set(isSki ? 0.12 : 0.1, 0.48, isSki ? 0 : -0.08);
+    this.hipR.position.set(isSki ? 0.1 : 0.14, 0.62, isSki ? 0 : -0.10);
     this.riderGroup.add(this.hipR);
 
-    this.thighR = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.16, 3, 6), pantsMat);
-    this.thighR.position.set(0, -0.1, 0); this.thighR.castShadow = true;
+    this.thighR = new THREE.Mesh(new THREE.CapsuleGeometry(0.095, 0.30, 5, 8), pantsMat);
+    this.thighR.position.set(0, -0.20, 0); this.thighR.castShadow = true;
     this.hipR.add(this.thighR);
 
     this.kneeR = new THREE.Group();
-    this.kneeR.position.set(0, -0.22, 0);
+    this.kneeR.position.set(0, -0.34, 0);
     this.hipR.add(this.kneeR);
 
-    this.calfR = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.16, 3, 6), pantsMat);
-    this.calfR.position.set(0, -0.1, 0); this.calfR.castShadow = true;
+    this.calfR = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.28, 5, 8), pantsMat);
+    this.calfR.position.set(0, -0.14, 0); this.calfR.castShadow = true;
     this.kneeR.add(this.calfR);
 
-    const bootR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.18), this.bootMat);
-    bootR.position.set(0, -0.22, 0.03);
-    this.kneeR.add(bootR);
+    addLegWrinkles(this.hipR, this.kneeR, 1);
 
-    // Default leg pose: knees bent for riding stance
+    const bootBodyR = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.05, 4, 6), this.bootMat);
+    bootBodyR.scale.set(1, 1, 1.2);
+    bootBodyR.position.set(0, -0.30, 0.01); this.kneeR.add(bootBodyR);
+    const soleR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 0.18), this.bootMat);
+    soleR.position.set(0, -0.34, 0.02); this.kneeR.add(soleR);
+
+    // Default leg pose: straight down, knees bent forward — like reference images
     this.hipL.rotation.x = -0.3;
     this.kneeL.rotation.x = 0.6;
     this.hipR.rotation.x = -0.3;
@@ -340,34 +605,99 @@ export class Player {
   }
 
   buildSnowboard() {
-    this.boardMesh = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.06, 1.9), this.boardMat);
+    // Shaped board with sidecut profile using ExtrudeGeometry
+    const shape = new THREE.Shape();
+    // Board profile: nose → waist → tail with sidecut
+    const noseW = 0.15, waistW = 0.13, tailW = 0.145;
+    const noseZ = 0.828, tailZ = -0.828;
+    shape.moveTo(-waistW, tailZ + 0.15);
+    shape.quadraticCurveTo(-tailW, tailZ + 0.05, -tailW * 0.7, tailZ);
+    shape.quadraticCurveTo(0, tailZ - 0.06, tailW * 0.7, tailZ);
+    shape.quadraticCurveTo(tailW, tailZ + 0.05, waistW, tailZ + 0.15);
+    shape.lineTo(waistW, 0);
+    shape.quadraticCurveTo(noseW + 0.01, noseZ * 0.3, noseW, noseZ - 0.15);
+    shape.quadraticCurveTo(noseW, noseZ - 0.05, noseW * 0.7, noseZ);
+    shape.quadraticCurveTo(0, noseZ + 0.06, -noseW * 0.7, noseZ);
+    shape.quadraticCurveTo(-noseW, noseZ - 0.05, -noseW, noseZ - 0.15);
+    shape.quadraticCurveTo(-noseW - 0.01, noseZ * 0.3, -waistW, 0);
+    shape.lineTo(-waistW, tailZ + 0.15);
+
+    const extrudeSettings = {
+      depth: 0.05,
+      bevelEnabled: true,
+      bevelThickness: 0.008,
+      bevelSize: 0.008,
+      bevelSegments: 1,
+      curveSegments: 8
+    };
+    const boardGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    // Rotate so the board lies flat (extrude goes along Y, we want it along Y axis as thickness)
+    boardGeo.rotateX(-Math.PI / 2);
+    boardGeo.translate(0, 0.025, 0);
+    this.boardMesh = new THREE.Mesh(boardGeo, this.boardMat);
     this.boardMesh.castShadow = true;
 
+    // Nose rocker (curved tip)
+    const noseRocker = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12, 0.12, 0.035, 8, 1, false, 0, Math.PI),
+      this.boardMat);
+    noseRocker.rotation.z = Math.PI / 2;
+    noseRocker.rotation.y = Math.PI / 2;
+    noseRocker.position.set(0, 0.04, 0.794);
+    this.boardMesh.add(noseRocker);
+
+    // Tail rocker
+    const tailRocker = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.11, 0.11, 0.035, 8, 1, false, 0, Math.PI),
+      this.boardMat);
+    tailRocker.rotation.z = Math.PI / 2;
+    tailRocker.rotation.y = -Math.PI / 2;
+    tailRocker.position.set(0, 0.04, -0.794);
+    this.boardMesh.add(tailRocker);
+
+    // Stomp pads
     const frontPad = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 0.065, 0.35),
+      new THREE.BoxGeometry(0.24, 0.065, 0.3),
       new THREE.MeshStandardMaterial({ color: 0xff5722 })
     );
-    frontPad.position.set(0, 0.005, 0.3);
+    frontPad.position.set(0, 0.005, 0.22);
     this.boardMesh.add(frontPad);
 
     const rearPad = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 0.065, 0.2),
+      new THREE.BoxGeometry(0.24, 0.065, 0.18),
       new THREE.MeshStandardMaterial({ color: 0xffc107 })
     );
-    rearPad.position.set(0, 0.005, -0.4);
+    rearPad.position.set(0, 0.005, -0.30);
     this.boardMesh.add(rearPad);
 
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 0.2), this.boardMat);
-    nose.position.set(0, 0.04, 0.95); nose.rotation.x = 0.3; this.boardMesh.add(nose);
-    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.04, 0.2), this.boardMat);
-    tail.position.set(0, 0.04, -0.95); tail.rotation.x = -0.3; this.boardMesh.add(tail);
-
+    // Bindings with highback and straps
     this.bindingMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
     this.bindings = [];
-    for (const z of [0.35, -0.3]) {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.18), this.bindingMat);
+    for (const z of [0.22, -0.22]) {
+      // Base plate
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.07, 0.16), this.bindingMat);
       b.position.set(0, 0.06, z); this.boardMesh.add(b);
       this.bindings.push(b);
+
+      // Highback plate
+      const highback = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.015), this.bindingMat);
+      highback.position.set(0, 0.12, z - 0.075);
+      highback.rotation.x = 0.25; // angled back
+      this.boardMesh.add(highback);
+
+      // Ankle strap arc
+      const ankleStrap = new THREE.Mesh(
+        new THREE.TorusGeometry(0.06, 0.012, 4, 8, Math.PI), this.bindingMat);
+      ankleStrap.position.set(0, 0.1, z);
+      ankleStrap.rotation.y = Math.PI / 2;
+      this.boardMesh.add(ankleStrap);
+
+      // Toe strap arc
+      const toeStrap = new THREE.Mesh(
+        new THREE.TorusGeometry(0.055, 0.01, 4, 8, Math.PI), this.bindingMat);
+      toeStrap.position.set(0, 0.08, z + 0.06);
+      toeStrap.rotation.y = Math.PI / 2;
+      this.boardMesh.add(toeStrap);
     }
     this.boardGroup.add(this.boardMesh);
   }
@@ -427,11 +757,11 @@ export class Player {
     const s = speed || 0.1;
     const isSki = this.equipmentType === 'ski';
     // Arms: spread outward from body (negative Z = outward for left, positive Z = outward for right)
-    this.lerpJoint(this.shoulderL, 'z', isSki ? -0.75 : -0.7, s);
+    this.lerpJoint(this.shoulderL, 'z', isSki ? -0.75 : -0.35, s);
     this.lerpJoint(this.shoulderL, 'x', isSki ? 0.2 : 0.15, s);
     this.lerpJoint(this.elbowL, 'x', -0.3, s);
 
-    this.lerpJoint(this.shoulderR, 'z', isSki ? 0.75 : 0.7, s);
+    this.lerpJoint(this.shoulderR, 'z', isSki ? 0.75 : 0.35, s);
     this.lerpJoint(this.shoulderR, 'x', isSki ? 0.2 : 0.15, s);
     this.lerpJoint(this.elbowR, 'x', -0.3, s);
 
@@ -838,8 +1168,8 @@ export class Player {
       } else {
         this.riderGroup.rotation.x = THREE.MathUtils.lerp(this.riderGroup.rotation.x, 0, 0.1);
         // Legs: carving + landing impact
-        const frontKnee = 0.6 + impactBend + lean * 0.15;
-        const rearKnee = 0.6 + impactBend - lean * 0.15;
+        const frontKnee = 0.6 + impactBend + lean * 0.2;
+        const rearKnee = 0.6 + impactBend - lean * 0.2;
         const frontHip = -0.3 - impactBend * 0.5;
         const rearHip = -0.3 - impactBend * 0.5;
 
@@ -848,20 +1178,23 @@ export class Player {
         this.lerpJoint(this.hipR, 'x', rearHip, 0.12);
         this.lerpJoint(this.kneeR, 'x', rearKnee, 0.12);
 
-        // Arms: spread outward, sway with turns
+        // Arms: spread outward, stronger sway with turns
         const armZ = this.equipmentType === 'ski' ? 0.75 : 0.7;
         const armX = this.equipmentType === 'ski' ? 0.2 : 0.15;
-        this.lerpJoint(this.shoulderL, 'z', -armZ - lean * 0.15, 0.1);
-        this.lerpJoint(this.shoulderL, 'x', armX - lean * 0.15, 0.1);
-        this.lerpJoint(this.elbowL, 'x', -0.3 - lean * 0.2, 0.1);
+        this.lerpJoint(this.shoulderL, 'z', -armZ - lean * 0.25, 0.1);
+        this.lerpJoint(this.shoulderL, 'x', armX - lean * 0.2 + impactBend * 0.3, 0.1);
+        this.lerpJoint(this.elbowL, 'x', -0.3 - lean * 0.25, 0.1);
 
-        this.lerpJoint(this.shoulderR, 'z', armZ - lean * 0.15, 0.1);
-        this.lerpJoint(this.shoulderR, 'x', armX + lean * 0.15, 0.1);
-        this.lerpJoint(this.elbowR, 'x', -0.3 + lean * 0.2, 0.1);
+        this.lerpJoint(this.shoulderR, 'z', armZ - lean * 0.25, 0.1);
+        this.lerpJoint(this.shoulderR, 'x', armX + lean * 0.2 + impactBend * 0.3, 0.1);
+        this.lerpJoint(this.elbowR, 'x', -0.3 + lean * 0.25, 0.1);
       }
 
-      // Rider body drop from landing impact
-      const dropY = this.isTucking ? -0.15 : (-impactBend * 0.15);
+      // Rider body drop from landing impact + subtle breathing micro-motion
+      if (!this._rideTime) this._rideTime = 0;
+      this._rideTime += dt;
+      const breathe = Math.sin(this._rideTime * 1.5) * 0.015;
+      const dropY = this.isTucking ? -0.15 : (-impactBend * 0.15 + breathe);
       this.riderGroup.position.y = THREE.MathUtils.lerp(this.riderGroup.position.y, dropY, 0.12);
 
       // Rider leans into carve (shoulder rotation + body lean)
@@ -869,8 +1202,15 @@ export class Player {
         this.riderGroup.rotation.z, this.edgeLeanSmooth * 0.3, 0.15
       );
 
-      // Head looks into turns slightly
-      this.lerpJoint(this.headGroup, 'y', -0.6 - lean * 0.2, 0.1);
+      // Head looks into turns more aggressively + dips on landing impact
+      const headLookY = -0.6 - lean * 0.35;
+      this.lerpJoint(this.headGroup, 'y', headLookY, 0.1);
+      if (impactBend > 0.1) {
+        this.headGroup.rotation.x = THREE.MathUtils.lerp(
+          this.headGroup.rotation.x, impactBend * 0.15, 0.15);
+      } else {
+        this.headGroup.rotation.x = THREE.MathUtils.lerp(this.headGroup.rotation.x, 0, 0.08);
+      }
 
       // Keep stance yaw
       this.riderGroup.rotation.y = THREE.MathUtils.lerp(this.riderGroup.rotation.y, this.STANCE_YAW, 0.15);
@@ -1195,9 +1535,19 @@ export class Player {
     const xBound = terrain.chunkWidth ? (terrain.chunkWidth / 2 - 10) : 50;
     this.position.x = THREE.MathUtils.clamp(this.position.x, -xBound, xBound);
 
+    // Grab wind-up timer
+    if (this.isGrabbing && !this.wasGrabbing) {
+      this.grabWindup = 0.15; // 150ms wind-up before grab connects
+    }
+    if (this.grabWindup > 0) this.grabWindup -= dt;
+    this.wasGrabbing = this.isGrabbing;
+
     // Grab & tuck & default air animations
-    if (this.isGrabbing && !this.grounded) {
-      this.applyGrabPose(this.grabType);
+    if (this.isGrabbing && !this.grounded && this.grabWindup > 0) {
+      // Wind-up phase — reaching toward grab, half-speed
+      this.applyGrabPose(this.grabType, true);
+    } else if (this.isGrabbing && !this.grounded) {
+      this.applyGrabPose(this.grabType, false);
     } else if (this.isTucking && !this.grounded && !this.grinding) {
       // Air tuck — crouched tight for faster rotation
       this.riderGroup.position.y = THREE.MathUtils.lerp(this.riderGroup.position.y, -0.2, 0.15);
@@ -1218,19 +1568,25 @@ export class Player {
       // Default air pose: arms spread WIDE for balance/style
       this.riderGroup.position.y = THREE.MathUtils.lerp(this.riderGroup.position.y, 0, 0.1);
       this.riderGroup.rotation.x = THREE.MathUtils.lerp(this.riderGroup.rotation.x, 0.1, 0.1);
+      this.riderGroup.rotation.z = THREE.MathUtils.lerp(this.riderGroup.rotation.z, 0, 0.1);
       // Arms spread wide out to sides — one slightly higher for style
       this.lerpJoint(this.shoulderL, 'z', -1.05, 0.12);
       this.lerpJoint(this.shoulderL, 'x', 0.1, 0.12);
       this.lerpJoint(this.elbowL, 'x', -0.2, 0.12);
+      this.lerpJoint(this.elbowL, 'z', 0, 0.12);
       this.lerpJoint(this.shoulderR, 'z', 0.95, 0.12);
       this.lerpJoint(this.shoulderR, 'x', -0.1, 0.12);
       this.lerpJoint(this.elbowR, 'x', -0.2, 0.12);
+      this.lerpJoint(this.elbowR, 'z', 0, 0.12);
       // Legs slightly tucked
       this.lerpJoint(this.hipL, 'x', -0.4, 0.1);
       this.lerpJoint(this.kneeL, 'x', 0.7, 0.1);
       this.lerpJoint(this.hipR, 'x', -0.4, 0.1);
       this.lerpJoint(this.kneeR, 'x', 0.7, 0.1);
     }
+
+    // Ponytail physics
+    this.updatePonytail(dt);
 
     // Update visual
     this.group.position.copy(this.position);
@@ -1458,91 +1814,105 @@ export class Player {
     this.angularVelocity.set(0, 0, 0);
   }
 
-  applyGrabPose(type) {
-    const L = 0.18; // lerp speed for smooth transitions
+  applyGrabPose(type, windUp = false) {
+    const L = windUp ? 0.08 : 0.18; // slower lerp during wind-up
     let crouchY = -0.35;
     let leanX = 0.3;
+    let leanZ = 0; // body counter-rotation (roll)
 
-    // All grabs: legs pull up to meet the hand
-    const grabHipX = -0.6;
-    const grabKneeX = 1.2;
-
-    this.lerpJoint(this.hipL, 'x', grabHipX, L);
-    this.lerpJoint(this.kneeL, 'x', grabKneeX, L);
-    this.lerpJoint(this.hipR, 'x', grabHipX, L);
-    this.lerpJoint(this.kneeR, 'x', grabKneeX, L);
+    // Per-grab leg differentiation
+    let hipLX = -0.6, kneeLX = 1.2;
+    let hipRX = -0.6, kneeRX = 1.2;
 
     switch (type) {
       case 'indy':
-        // Right hand grabs toe edge between feet — arm reaches down/inward
+        // Right hand grabs toe edge between feet — slight frontside lean
         this.lerpJoint(this.shoulderR, 'z', 1.2, L);
         this.lerpJoint(this.shoulderR, 'x', 0.2, L);
         this.lerpJoint(this.elbowR, 'x', -1.3, L);
-        // Left arm relaxed / balanced outward
-        this.lerpJoint(this.shoulderL, 'z', -0.75, L);
-        this.lerpJoint(this.shoulderL, 'x', 0, L);
-        this.lerpJoint(this.elbowL, 'x', -0.3, L);
+        // Trailing arm — up high with style
+        this.lerpJoint(this.shoulderL, 'z', -1.2, L);
+        this.lerpJoint(this.shoulderL, 'x', -0.3, L);
+        this.lerpJoint(this.elbowL, 'x', -0.15, L);
+        this.lerpJoint(this.elbowL, 'z', 0.3, L); // style wrist angle
+        leanZ = -0.15; // slight frontside lean
         break;
 
       case 'method':
-        // Left hand reaches behind and up to heel edge — classic tweaked method
+        // Classic tweaked method — arch back, body counter-rotation
         this.lerpJoint(this.shoulderL, 'z', -1.1, L);
         this.lerpJoint(this.shoulderL, 'x', -0.8, L);
         this.lerpJoint(this.elbowL, 'x', -1.4, L);
-        // Right arm forward for balance
-        this.lerpJoint(this.shoulderR, 'z', 0.6, L);
-        this.lerpJoint(this.shoulderR, 'x', 0.4, L);
-        this.lerpJoint(this.elbowR, 'x', -0.3, L);
-        leanX = 0.45;
+        // Right arm forward and up for balance/style
+        this.lerpJoint(this.shoulderR, 'z', 0.5, L);
+        this.lerpJoint(this.shoulderR, 'x', 0.5, L);
+        this.lerpJoint(this.elbowR, 'x', -0.2, L);
+        this.lerpJoint(this.elbowR, 'z', -0.25, L);
+        leanX = 0.5;
+        leanZ = 0.3; // arch back heelside
+        hipLX = -0.4; // front leg extends more
+        hipRX = -0.8; // rear leg tucks harder
+        kneeRX = 1.5;
         break;
 
       case 'stalefish':
-        // Right hand crosses body to grab heel edge
+        // Right hand crosses body to heel edge — body twist
         this.lerpJoint(this.shoulderR, 'z', 1.0, L);
         this.lerpJoint(this.shoulderR, 'x', -0.3, L);
         this.lerpJoint(this.elbowR, 'x', -1.4, L);
-        // Left arm out for balance
-        this.lerpJoint(this.shoulderL, 'z', -0.85, L);
-        this.lerpJoint(this.shoulderL, 'x', 0.2, L);
-        this.lerpJoint(this.elbowL, 'x', -0.3, L);
+        // Trailing left arm with style
+        this.lerpJoint(this.shoulderL, 'z', -1.0, L);
+        this.lerpJoint(this.shoulderL, 'x', 0.1, L);
+        this.lerpJoint(this.elbowL, 'x', -0.2, L);
+        this.lerpJoint(this.elbowL, 'z', 0.25, L);
         crouchY = -0.4;
+        leanZ = 0.2; // body twist into grab
+        hipLX = -0.5; // front leg slightly extended
         break;
 
       case 'melon':
-        // Left hand grabs heel edge — arm reaches down/inward
+        // Left hand grabs heel edge
         this.lerpJoint(this.shoulderL, 'z', -1.2, L);
         this.lerpJoint(this.shoulderL, 'x', 0.2, L);
         this.lerpJoint(this.elbowL, 'x', -1.3, L);
-        // Right arm relaxed / balanced outward
-        this.lerpJoint(this.shoulderR, 'z', 0.75, L);
-        this.lerpJoint(this.shoulderR, 'x', 0, L);
-        this.lerpJoint(this.elbowR, 'x', -0.3, L);
+        // Trailing right arm — raised for style
+        this.lerpJoint(this.shoulderR, 'z', 1.0, L);
+        this.lerpJoint(this.shoulderR, 'x', -0.2, L);
+        this.lerpJoint(this.elbowR, 'x', -0.15, L);
+        this.lerpJoint(this.elbowR, 'z', -0.3, L);
+        leanZ = 0.15;
         break;
 
       case 'nosegrab':
-        // Right hand reaches forward and down to grab board nose
+        // Deep forward lean — right hand reaches for nose
         this.lerpJoint(this.shoulderR, 'z', 1.0, L);
-        this.lerpJoint(this.shoulderR, 'x', 0.8, L);
+        this.lerpJoint(this.shoulderR, 'x', 0.9, L);
         this.lerpJoint(this.elbowR, 'x', -1.2, L);
-        // Left arm back for balance
-        this.lerpJoint(this.shoulderL, 'z', -0.7, L);
-        this.lerpJoint(this.shoulderL, 'x', -0.4, L);
-        this.lerpJoint(this.elbowL, 'x', -0.3, L);
-        leanX = 0.55;
+        // Left arm swept back high
+        this.lerpJoint(this.shoulderL, 'z', -0.8, L);
+        this.lerpJoint(this.shoulderL, 'x', -0.5, L);
+        this.lerpJoint(this.elbowL, 'x', -0.1, L);
+        this.lerpJoint(this.elbowL, 'z', 0.3, L);
+        leanX = 0.7; // deep forward lean
         crouchY = -0.3;
+        hipRX = -0.3; // rear leg extends back
+        kneeRX = 0.8;
         break;
 
       case 'tailgrab':
-        // Right hand reaches backward and down to grab board tail
+        // Lean back — right hand reaches for tail
         this.lerpJoint(this.shoulderR, 'z', 1.0, L);
-        this.lerpJoint(this.shoulderR, 'x', -0.8, L);
+        this.lerpJoint(this.shoulderR, 'x', -0.9, L);
         this.lerpJoint(this.elbowR, 'x', -1.2, L);
-        // Left arm forward for balance
-        this.lerpJoint(this.shoulderL, 'z', -0.7, L);
-        this.lerpJoint(this.shoulderL, 'x', 0.4, L);
-        this.lerpJoint(this.elbowL, 'x', -0.3, L);
-        leanX = -0.15;
+        // Left arm forward and up
+        this.lerpJoint(this.shoulderL, 'z', -0.8, L);
+        this.lerpJoint(this.shoulderL, 'x', 0.5, L);
+        this.lerpJoint(this.elbowL, 'x', -0.15, L);
+        this.lerpJoint(this.elbowL, 'z', 0.25, L);
+        leanX = -0.2; // lean back
         crouchY = -0.3;
+        hipLX = -0.3; // front leg extends forward
+        kneeLX = 0.8;
         break;
 
       default:
@@ -1555,16 +1925,34 @@ export class Player {
         this.lerpJoint(this.elbowR, 'x', -1.3, L);
     }
 
-    // Crouch body down and lean
+    // Per-grab leg positions
+    this.lerpJoint(this.hipL, 'x', hipLX, L);
+    this.lerpJoint(this.kneeL, 'x', kneeLX, L);
+    this.lerpJoint(this.hipR, 'x', hipRX, L);
+    this.lerpJoint(this.kneeR, 'x', kneeRX, L);
+
+    // Crouch body down, lean forward/back, and counter-rotate
     this.riderGroup.position.y = THREE.MathUtils.lerp(this.riderGroup.position.y, crouchY, 0.15);
     this.riderGroup.rotation.x = THREE.MathUtils.lerp(this.riderGroup.rotation.x, leanX, 0.15);
+    this.riderGroup.rotation.z = THREE.MathUtils.lerp(this.riderGroup.rotation.z, leanZ, 0.12);
   }
 
   setColor(part, colorHex) {
     const color = new THREE.Color(colorHex);
     switch (part) {
-      case 'jacket': this.jacketMat.color.copy(color); break;
-      case 'pants': this.pantsMat.color.copy(color); break;
+      case 'jacket':
+        this.jacketMat.color.copy(color);
+        // Darken fold material to match new jacket color
+        if (this._jacketFoldMat) {
+          this._jacketFoldMat.color.copy(color).multiplyScalar(0.75);
+        }
+        break;
+      case 'pants':
+        this.pantsMat.color.copy(color);
+        if (this._pantsFoldMat) {
+          this._pantsFoldMat.color.copy(color).multiplyScalar(0.8);
+        }
+        break;
       case 'board':
         if (this.boardMat.map) {
           // Texture applied — set white so canvas colors show true
@@ -1603,13 +1991,41 @@ export class Player {
 
   setBaggyPants(isBaggy) {
     // Baggy pants: scale thighs, calves, and hips wider for a loose fit
-    const s = isBaggy ? 2.2 : 1.0;  // 4x volume ≈ 2.2x on XZ (width/depth)
+    const s = isBaggy ? 1.875 : 1.0;
     for (const mesh of [this.thighL, this.thighR, this.calfL, this.calfR]) {
       mesh.scale.set(s, 1, s);
     }
     // Slightly widen hips (keep subtle so no big rectangle)
     const hipS = isBaggy ? 1.15 : 1.0;
     this.hipsMesh.scale.set(hipS, 1, hipS);
+
+    // Hide skinny wrinkles when baggy, show when skinny
+    if (this._pantsWrinkles) {
+      for (const w of this._pantsWrinkles) w.visible = !isBaggy;
+    }
+
+    // Add/remove baggy-specific ridges (just a few subtle ones)
+    if (isBaggy && !this._baggyRidges) {
+      this._baggyRidges = [];
+      const mat = this._pantsFoldMat;
+      // A couple ridges on each thigh
+      for (const [group, ys] of [[this.hipL, [-0.10, -0.24]], [this.hipR, [-0.10, -0.24]]]) {
+        for (const y of ys) {
+          const ridge = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.014, 4, 14), mat);
+          ridge.rotation.x = Math.PI / 2; ridge.position.set(0, y, 0);
+          group.add(ridge); this._baggyRidges.push(ridge);
+        }
+      }
+      // One ridge on each calf near the knee
+      for (const group of [this.kneeL, this.kneeR]) {
+        const ridge = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.012, 4, 14), mat);
+        ridge.rotation.x = Math.PI / 2; ridge.position.set(0, -0.08, 0);
+        group.add(ridge); this._baggyRidges.push(ridge);
+      }
+    }
+    if (this._baggyRidges) {
+      for (const r of this._baggyRidges) r.visible = isBaggy;
+    }
   }
 
   setHaloMode(enabled) {
