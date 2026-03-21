@@ -913,7 +913,7 @@ export class Terrain {
         this.rockMaterial
       );
       post.position.set(0, railHeight / 2, -railLength / 2 + i * (railLength / (postCount - 1)));
-      post.castShadow = true;
+      post.castShadow = false;
       group.add(post);
     }
 
@@ -948,7 +948,7 @@ export class Terrain {
         this.rockMaterial
       );
       post.position.set(0, h / 2, z);
-      post.castShadow = true;
+      post.castShadow = false;
       group.add(post);
     }
 
@@ -992,7 +992,6 @@ export class Terrain {
       );
       seg.rotation.x = Math.PI / 2 - angle;
       seg.position.set(0, (y1 + y2) / 2, (z1 + z2) / 2);
-      seg.castShadow = true;
       group.add(seg);
     }
 
@@ -1293,7 +1292,7 @@ export class Terrain {
         this.rustyMetalMaterial
       );
       post.position.set(0, postHeight / 2, z);
-      post.castShadow = true;
+      post.castShadow = false;
       group.add(post);
 
       // Rounded cap on each post
@@ -1339,7 +1338,7 @@ export class Terrain {
       );
       step.rotation.x = Math.PI / 2;
       step.position.set(0, h, currentZ - stepLength / 2);
-      step.castShadow = true;
+      step.castShadow = false;
       group.add(step);
 
       // Posts for this step
@@ -1364,7 +1363,7 @@ export class Terrain {
         );
         drop.rotation.x = Math.PI / 2 + dropAngle;
         drop.position.set(0, (h + nextH) / 2, currentZ - stepLength - dropGap / 2);
-        drop.castShadow = true;
+        drop.castShadow = false;
         group.add(drop);
 
         currentZ -= stepLength + dropGap;
@@ -1425,7 +1424,7 @@ export class Terrain {
         this.rockMaterial
       );
       post.position.set(0, railHeight / 2, z);
-      post.castShadow = true;
+      post.castShadow = false;
       group.add(post);
     }
 
@@ -1487,7 +1486,7 @@ export class Terrain {
         this.concreteMaterial
       );
       step.position.set(0.8 * widthScale, stepH / 2, stepZ);
-      step.castShadow = true;
+      step.castShadow = false;
       group.add(step);
 
       // Snow on step tread
@@ -1595,7 +1594,7 @@ export class Terrain {
     roof.position.y = bh + 0.075;
     group.add(roof);
 
-    // Windows — small emissive rectangles on front and back faces
+    // Windows — merged into a single geometry (1 draw call instead of 60+)
     const windowW = 0.6;
     const windowH = 0.8;
     const windowSpacingX = 2.0;
@@ -1603,21 +1602,40 @@ export class Terrain {
     const cols = Math.floor((bw - 1) / windowSpacingX);
     const rows = Math.floor((bh - 2) / windowSpacingY);
 
+    const winPositions = [];
+    const winIndices = [];
+    let vi = 0;
+
     for (const faceSign of [-1, 1]) {
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
           if (this.rand() < 0.2) continue; // some windows dark
           const wx = -((cols - 1) * windowSpacingX) / 2 + c * windowSpacingX;
           const wy = 2 + r * windowSpacingY;
-          const win = new THREE.Mesh(
-            new THREE.PlaneGeometry(windowW, windowH),
-            this.windowMaterial
+          const wz = faceSign * (bd / 2 + 0.01);
+          const hw = windowW / 2;
+          const hh = windowH / 2;
+          // 4 corners of the window quad
+          winPositions.push(
+            wx - hw, wy - hh, wz,
+            wx + hw, wy - hh, wz,
+            wx + hw, wy + hh, wz,
+            wx - hw, wy + hh, wz
           );
-          win.position.set(wx, wy, faceSign * (bd / 2 + 0.01));
-          if (faceSign < 0) win.rotation.y = Math.PI;
-          group.add(win);
+          // Two triangles per quad
+          winIndices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+          vi += 4;
         }
       }
+    }
+
+    if (winPositions.length > 0) {
+      const winGeo = new THREE.BufferGeometry();
+      winGeo.setAttribute('position', new THREE.Float32BufferAttribute(winPositions, 3));
+      winGeo.setIndex(winIndices);
+      winGeo.computeVertexNormals();
+      const winMesh = new THREE.Mesh(winGeo, this.windowMaterial);
+      group.add(winMesh);
     }
 
     return group;
@@ -1633,7 +1651,6 @@ export class Terrain {
       this.metalRailMaterial
     );
     pole.position.y = poleHeight / 2;
-    pole.castShadow = true;
     group.add(pole);
 
     // Arm extending inward (toward the run)
@@ -1822,7 +1839,6 @@ export class Terrain {
         this.poleMaterial
       );
       pole.position.set(side, poleHeight / 2, 0);
-      pole.castShadow = true;
       group.add(pole);
 
       const flag = new THREE.Mesh(
@@ -1869,7 +1885,6 @@ export class Terrain {
         new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.6, roughness: 0.2 })
       );
       pole.position.set(side, poleHeight / 2, 0);
-      pole.castShadow = true;
       group.add(pole);
 
       // Gold sphere on top
@@ -1888,7 +1903,7 @@ export class Terrain {
     );
     crossbar.rotation.z = Math.PI / 2;
     crossbar.position.y = poleHeight;
-    crossbar.castShadow = true;
+    crossbar.castShadow = false;
     group.add(crossbar);
 
     // Banner — checkered pattern using multiple quads
@@ -1923,7 +1938,7 @@ export class Terrain {
         new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xcc0000, emissiveIntensity: 0.3 })
       );
       marker.position.set(side, 2.5, 0);
-      marker.castShadow = true;
+      marker.castShadow = false;
       group.add(marker);
 
       // Red flag
