@@ -53,6 +53,7 @@ export class Game {
     this.player = new Player(this.scene, this.selectedEquipment);
     this.player.stance = this.selectedStance;
     this.player.updateStanceYaw();
+    this.loadPlayerModel(); // load GLB character model (async, non-blocking)
     this.tricks = new TrickSystem();
     this.quests = new QuestSystem();
     this.ridePass = new RidePass();
@@ -1093,6 +1094,7 @@ export class Game {
           this.player = new Player(this.scene, this.selectedEquipment);
           this.player.stance = this.selectedStance;
           this.player.updateStanceYaw();
+          this.loadPlayerModel();
           // Re-apply saved colors then shop items
           for (const [part, color] of Object.entries(savedColors)) {
             this.player.setColor(part, color);
@@ -1155,6 +1157,7 @@ export class Game {
           this.player = new Player(this.scene, this.selectedEquipment);
           this.player.stance = this.selectedStance;
           this.player.updateStanceYaw();
+          this.loadPlayerModel();
           for (const [part, color] of Object.entries(savedColors)) {
             this.player.setColor(part, color);
           }
@@ -3574,6 +3577,15 @@ export class Game {
     }
     this.applyEquippedItems();
     this.renderShopItems(this.activeShopTab);
+  }
+
+  loadPlayerModel() {
+    // GLB character model disabled — using procedural rider for now
+    // To re-enable Human Model 1 (Mixamo GLB):
+    // const modelPath = import.meta.env.BASE_URL + 'models/character.glb';
+    // this.player.loadCharacterModel(modelPath).catch((err) => {
+    //   console.warn('[Game] No GLB character model found, using procedural rider.', err.message || err);
+    // });
   }
 
   applyEquippedItems() {

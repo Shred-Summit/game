@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 export class Player {
   constructor(scene, equipmentType = 'snowboard') {
@@ -110,7 +111,7 @@ export class Player {
 
     // Stance depends on equipment — base values (overridden by stance/switch)
     this.BASE_STANCE_YAW = this.equipmentType === 'ski' ? 0 : 1.3;
-    this.BASE_HEAD_YAW = this.equipmentType === 'ski' ? 0 : 0.6;
+    this.BASE_HEAD_YAW = this.equipmentType === 'ski' ? 0 : -0.785;
     this.STANCE_YAW = this.BASE_STANCE_YAW;
     this.HEAD_YAW = this.BASE_HEAD_YAW;
 
@@ -126,8 +127,90 @@ export class Player {
     this.scene.add(this.group);
   }
 
+  // Returns the rest-pose offset for a given joint and axis (GLB bones only)
+  _boneRest(joint, axis) {
+    if (!this.glbLoaded || !this._boneRestX) return 0;
+    const restMap = { x: this._boneRestX, y: this._boneRestY, z: this._boneRestZ };
+    for (const key of ['shoulderL','elbowL','shoulderR','elbowR','hipL','kneeL','hipR','kneeR','headGroup','neckGroup']) {
+      if (this[key] === joint && restMap[axis][key] !== undefined) {
+        return restMap[axis][key];
+      }
+    }
+    return 0;
+  }
+
+  // Set a joint's rotation, adding rest-pose offset for GLB bones
+  setJoint(joint, x, y, z) {
+    if (this.glbLoaded) {
+      const isKnee = (joint === this.kneeL || joint === this.kneeR);
+      if (isKnee) x = -x;
+    }
+    joint.rotation.set(
+      x + this._boneRest(joint, 'x'),
+      y + this._boneRest(joint, 'y'),
+      z + this._boneRest(joint, 'z')
+    );
+  }
+
   lerpJoint(joint, axis, target, speed) {
+    if (this.glbLoaded) {
+      // Mixamo shin (knee) bones have inverted X axis
+      if (axis === 'x') {
+        const isKnee = (joint === this.kneeL || joint === this.kneeR);
+        if (isKnee) target = -target;
+      }
+    }
+    target += this._boneRest(joint, axis);
     joint.rotation[axis] = THREE.MathUtils.lerp(joint.rotation[axis], target, speed);
+  }
+
+  /**
+   * Every frame, measure where foot bones ended up after animation,
+   * then offset the GLB model so feet sit on the binding positions.
+   * Bindings are at (0, 0.10, ±0.22) in riderGroup-local space.
+   */
+  _snapFeetToBindings() {
+    if (!this.glbModel || !this._boneFootL || !this._boneFootR || !this.glbPivot) return;
+
+    // Apply hip Z rest offsets that lerpJoint doesn't touch
+    // (animation only drives hip X for forward bend)
+    if (this.hipL) this.hipL.rotation.z = this._boneRestZ['hipL'] || 0;
+    if (this.hipR) this.hipR.rotation.z = this._boneRestZ['hipR'] || 0;
+
+    // Let riderGroup lean show through — only counter-rotate slightly
+    // so feet stay planted but torso visibly hunches over toes
+    this.glbPivot.rotation.x = -this.riderGroup.rotation.x * 0.15;
+    this.glbPivot.rotation.z = -this.riderGroup.rotation.z * 0.15;
+
+    // Reset model position so we measure bone locations cleanly
+    this.glbModel.position.set(0, 0, 0);
+    this.glbPivot.updateMatrixWorld(true);
+
+    // Get binding world positions from boardMesh
+    const bindWorldL = new THREE.Vector3(0, 0.20, 0.22);
+    const bindWorldR = new THREE.Vector3(0, 0.20, -0.22);
+    this.boardMesh.localToWorld(bindWorldL);
+    this.boardMesh.localToWorld(bindWorldR);
+
+    // Get foot world positions
+    const footWorldL = new THREE.Vector3();
+    const footWorldR = new THREE.Vector3();
+    this._boneFootL.getWorldPosition(footWorldL);
+    this._boneFootR.getWorldPosition(footWorldR);
+
+    // Snap each foot individually to its binding
+    // First pass: snap midpoint to get model roughly in place
+    const feetMid = footWorldL.clone().add(footWorldR).multiplyScalar(0.5);
+    const bindMid = bindWorldL.clone().add(bindWorldR).multiplyScalar(0.5);
+    const worldOffset = bindMid.clone().sub(feetMid);
+
+    // Apply offset in model's local space
+    this.glbModel.position.copy(worldOffset);
+    // Transform world offset into glbModel's parent (glbPivot) local space
+    const parentInv = new THREE.Matrix4().copy(this.glbPivot.matrixWorld).invert();
+    // We need direction only, not position transform
+    const zero = new THREE.Vector3().applyMatrix4(parentInv);
+    this.glbModel.position.applyMatrix4(parentInv).sub(zero);
   }
 
   updatePonytail(dt) {
@@ -660,6 +743,189 @@ export class Player {
     this.group.add(this.boardGroup);
   }
 
+  /**
+   * Load a GLB character model (e.g. Ready Player Me avatar) and replace
+   * the procedural rider geometry.  The existing animation system continues
+   * to work because lerpJoint operates on any object with a .rotation —
+   * THREE.Bone qualifies, so we simply swap the joint references.
+   *
+   * @param {string} url  Path or URL to a .glb file
+   * @returns {Promise<void>}
+   */
+  async loadCharacterModel(url) {
+    const loader = new GLTFLoader();
+
+    const gltf = await new Promise((resolve, reject) => {
+      loader.load(url, resolve, undefined, reject);
+    });
+
+    const model = gltf.scene;
+
+    // --- Hide all procedural rider meshes (keep groups for positioning) ---
+    this.riderGroup.traverse((child) => {
+      if (child.isMesh) child.visible = false;
+    });
+
+    // --- Scale & position the GLB to match the procedural rider ---
+    // The procedural rider had hips at y=0.62, feet in bindings at z=±0.22, y≈0.10
+    // We scale so head reaches ~1.65 above bindings, then position feet onto bindings.
+    const box = new THREE.Box3().setFromObject(model);
+    const glbHeight = box.max.y - box.min.y;
+    const targetHeight = 1.65; // total rider height from feet to head top
+    const scale = targetHeight / glbHeight;
+    model.scale.setScalar(scale);
+
+    // No model-level rotation needed — the riderGroup's STANCE_YAW handles board stance.
+    // RPM / Mixamo avatars face +Z natively which matches the procedural rider.
+
+    // Enable shadows on all meshes
+    model.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = false;
+        // Ensure proper material rendering
+        if (child.material) {
+          child.material.needsUpdate = true;
+        }
+      }
+    });
+
+    // Wrap GLB in a pivot so we can counter-rotate against riderGroup lean
+    this.glbPivot = new THREE.Group();
+    this.glbPivot.add(model);
+    this.riderGroup.add(this.glbPivot);
+    this.glbModel = model;
+
+    // --- Map skeleton bones to existing joint references ---
+    // Support both RPM names ("Hips") and Mixamo-prefixed ("mixamorigHips")
+    const boneNames = {
+      // Spine & head
+      'Hips':          '_boneHips',
+      'Spine':         '_boneSpine',
+      'Spine1':        '_boneSpine1',
+      'Spine2':        '_boneSpine2',
+      'Neck':          '_boneNeck',
+      'Head':          '_boneHead',
+      // Left arm
+      'LeftShoulder':  '_boneShoulderCapL',
+      'LeftArm':       '_boneUpperArmL',
+      'LeftForeArm':   '_boneForeArmL',
+      'LeftHand':      '_boneHandL',
+      // Right arm
+      'RightShoulder': '_boneShoulderCapR',
+      'RightArm':      '_boneUpperArmR',
+      'RightForeArm':  '_boneForeArmR',
+      'RightHand':     '_boneHandR',
+      // Left leg
+      'LeftUpLeg':     '_boneThighL',
+      'LeftLeg':       '_boneShinL',
+      'LeftFoot':      '_boneFootL',
+      // Right leg
+      'RightUpLeg':    '_boneThighR',
+      'RightLeg':      '_boneShinR',
+      'RightFoot':     '_boneFootR',
+    };
+    // Build lookup that accepts both "Hips" and "mixamorigHips"
+    const boneMap = {};
+    for (const [name, prop] of Object.entries(boneNames)) {
+      boneMap[name] = prop;
+      boneMap['mixamorig' + name] = prop;
+    }
+
+    // Find bones in the loaded model
+    model.traverse((child) => {
+      if (child.isBone) {
+        const mapped = boneMap[child.name];
+        if (mapped) this[mapped] = child;
+      }
+    });
+
+    // Store rest-pose quaternions so we can apply deltas properly
+    this._boneRestPose = {};
+    for (const key of Object.values(boneMap)) {
+      if (this[key]) {
+        this._boneRestPose[key] = this[key].quaternion.clone();
+      }
+    }
+
+    // --- Reassign joint references so existing animation code drives bones ---
+    // The animation calls lerpJoint(this.shoulderL, 'x', val, speed) etc.
+    // We point those references at the corresponding bones.
+    if (this._boneUpperArmL) this.shoulderL = this._boneUpperArmL;
+    if (this._boneForeArmL)  this.elbowL    = this._boneForeArmL;
+    if (this._boneUpperArmR) this.shoulderR = this._boneUpperArmR;
+    if (this._boneForeArmR)  this.elbowR    = this._boneForeArmR;
+    if (this._boneThighL)    this.hipL      = this._boneThighL;
+    if (this._boneShinL)     this.kneeL     = this._boneShinL;
+    if (this._boneThighR)    this.hipR      = this._boneThighR;
+    if (this._boneShinR)     this.kneeR     = this._boneShinR;
+    if (this._boneHead)      this.headGroup = this._boneHead;
+    if (this._boneNeck)      this.neckGroup = this._boneNeck;
+
+    // Store materials from the GLB for color customization
+    this._glbMaterials = [];
+    model.traverse((child) => {
+      if (child.isMesh && child.material) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        for (const mat of mats) {
+          if (!this._glbMaterials.includes(mat)) this._glbMaterials.push(mat);
+        }
+      }
+    });
+
+    // --- Store rest-pose rotations for every mapped bone ---
+    // Mixamo bones have non-identity rest rotations that orient the skeleton.
+    // The procedural rider assumes identity rest (rotation 0,0,0 = straight down).
+
+    // Change shoulder rotation order to YXZ so the large Y rotation (arms down
+    // from T-pose) is applied first, avoiding gimbal lock that corrupts X/Z.
+    if (this.shoulderL) this.shoulderL.rotation.order = 'YXZ';
+    if (this.shoulderR) this.shoulderR.rotation.order = 'YXZ';
+
+    // We store the rest values so lerpJoint can apply deltas on top.
+    this._boneRestX = {};
+    this._boneRestY = {};
+    this._boneRestZ = {};
+    const jointKeys = ['shoulderL','elbowL','shoulderR','elbowR','hipL','kneeL','hipR','kneeR','headGroup','neckGroup'];
+    for (const key of jointKeys) {
+      if (this[key] && this[key].isBone) {
+        this._boneRestX[key] = this[key].rotation.x;
+        this._boneRestY[key] = this[key].rotation.y;
+        this._boneRestZ[key] = this[key].rotation.z;
+      }
+    }
+
+    // Arm offsets tuned via in-game bone posing tool to match natural
+    // snowboard riding stance (asymmetric — regular stance, left foot forward).
+    // These offsets are added to the T-pose rest values so the procedural
+    // animation deltas (lean sway, impact, etc.) layer cleanly on top.
+    this._boneRestX['shoulderL'] = (this._boneRestX['shoulderL'] || 0) + 0.02;
+    this._boneRestY['shoulderL'] = (this._boneRestY['shoulderL'] || 0) + 0.04;
+    this._boneRestZ['shoulderL'] = (this._boneRestZ['shoulderL'] || 0) + 0.60;
+    this._boneRestX['shoulderR'] = (this._boneRestX['shoulderR'] || 0) + 0.53;
+    this._boneRestY['shoulderR'] = (this._boneRestY['shoulderR'] || 0) - 0.33;
+    this._boneRestZ['shoulderR'] = (this._boneRestZ['shoulderR'] || 0) - 1.01;
+    // Elbows
+    this._boneRestX['elbowL'] = (this._boneRestX['elbowL'] || 0) + 0.88;
+    this._boneRestY['elbowL'] = (this._boneRestY['elbowL'] || 0) + 0.23;
+    this._boneRestZ['elbowL'] = (this._boneRestZ['elbowL'] || 0) + 0.73;
+    this._boneRestX['elbowR'] = (this._boneRestX['elbowR'] || 0) + 0.73;
+    this._boneRestY['elbowR'] = (this._boneRestY['elbowR'] || 0) - 0.11;
+    this._boneRestZ['elbowR'] = (this._boneRestZ['elbowR'] || 0) - 0.50;
+    // Hip Z offsets to spread legs along the board so feet land in bindings
+    // Mixamo hips have ±π Z rest; additional Z offset splays legs along board length
+    this._boneRestZ['hipL'] = (this._boneRestZ['hipL'] || 0) + 0.25; // front foot
+    this._boneRestZ['hipR'] = (this._boneRestZ['hipR'] || 0) - 0.22; // back foot
+
+    // Position starts at origin — _snapFeetToBindings() handles per-frame alignment
+    model.position.set(0, 0, 0);
+
+    this.glbLoaded = true;
+    console.log('[Player] GLB character model loaded successfully');
+    console.log('[Player] Bones found:', Object.values(boneMap).filter(k => this[k]).length, '/', Object.keys(boneMap).length);
+  }
+
+
   buildSnowboard() {
     // Shaped board with sidecut profile using ExtrudeGeometry
     const shape = new THREE.Shape();
@@ -710,21 +976,6 @@ export class Player {
     tailRocker.rotation.y = -Math.PI / 2;
     tailRocker.position.set(0, 0.04, -0.794);
     this.boardMesh.add(tailRocker);
-
-    // Stomp pads
-    const frontPad = new THREE.Mesh(
-      new THREE.BoxGeometry(0.24, 0.065, 0.3),
-      new THREE.MeshStandardMaterial({ color: 0xff5722 })
-    );
-    frontPad.position.set(0, 0.005, 0.22);
-    this.boardMesh.add(frontPad);
-
-    const rearPad = new THREE.Mesh(
-      new THREE.BoxGeometry(0.24, 0.065, 0.18),
-      new THREE.MeshStandardMaterial({ color: 0xffc107 })
-    );
-    rearPad.position.set(0, 0.005, -0.30);
-    this.boardMesh.add(rearPad);
 
     // Bindings with highback and straps
     this.bindingMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
@@ -812,20 +1063,22 @@ export class Player {
   resetJointsToRiding(speed) {
     const s = speed || 0.1;
     const isSki = this.equipmentType === 'ski';
-    // Arms: spread outward from body (negative Z = outward for left, positive Z = outward for right)
-    this.lerpJoint(this.shoulderL, 'z', isSki ? -0.75 : -0.35, s);
-    this.lerpJoint(this.shoulderL, 'x', isSki ? 0.2 : 0.15, s);
+    // Arms: hanging down at sides, angled downward
+    const glbArm = 0.35;
+    const armFwd = 0.15;
+    this.lerpJoint(this.shoulderL, 'z', isSki ? -0.75 : -glbArm, s);
+    this.lerpJoint(this.shoulderL, 'x', armFwd, s);
     this.lerpJoint(this.elbowL, 'x', -0.3, s);
 
-    this.lerpJoint(this.shoulderR, 'z', isSki ? 0.75 : 0.35, s);
-    this.lerpJoint(this.shoulderR, 'x', isSki ? 0.2 : 0.15, s);
+    this.lerpJoint(this.shoulderR, 'z', isSki ? 0.75 : glbArm, s);
+    this.lerpJoint(this.shoulderR, 'x', armFwd, s);
     this.lerpJoint(this.elbowR, 'x', -0.3, s);
 
-    // Legs: default riding bend
-    this.lerpJoint(this.hipL, 'x', -0.3, s);
-    this.lerpJoint(this.kneeL, 'x', 0.6, s);
-    this.lerpJoint(this.hipR, 'x', -0.3, s);
-    this.lerpJoint(this.kneeR, 'x', 0.6, s);
+    // Legs: athletic bend
+    this.lerpJoint(this.hipL, 'x', -0.5, s);
+    this.lerpJoint(this.kneeL, 'x', 0.8, s);
+    this.lerpJoint(this.hipR, 'x', -0.5, s);
+    this.lerpJoint(this.kneeR, 'x', 0.8, s);
 
     // Head look
     this.lerpJoint(this.headGroup, 'y', -0.6, s);
@@ -1214,35 +1467,39 @@ export class Player {
         this.lerpJoint(this.kneeL, 'x', 1.2, 0.12);
         this.lerpJoint(this.hipR, 'x', -0.7, 0.12);
         this.lerpJoint(this.kneeR, 'x', 1.2, 0.12);
-        // Arms fold in for tuck (but still out from body)
-        this.lerpJoint(this.shoulderL, 'z', -0.5, 0.12);
-        this.lerpJoint(this.shoulderL, 'x', 0.3, 0.12);
-        this.lerpJoint(this.elbowL, 'x', -0.9, 0.12);
-        this.lerpJoint(this.shoulderR, 'z', 0.5, 0.12);
-        this.lerpJoint(this.shoulderR, 'x', 0.3, 0.12);
-        this.lerpJoint(this.elbowR, 'x', -0.9, 0.12);
+        // Arms tucked in tight for speed tuck
+        const tuckZ = 0.5;
+        this.lerpJoint(this.shoulderL, 'z', -tuckZ, 0.12);
+        this.lerpJoint(this.shoulderL, 'x', 0.5, 0.12);
+        this.lerpJoint(this.elbowL, 'x', -1.2, 0.12);
+        this.lerpJoint(this.shoulderR, 'z', tuckZ, 0.12);
+        this.lerpJoint(this.shoulderR, 'x', 0.5, 0.12);
+        this.lerpJoint(this.elbowR, 'x', -1.2, 0.12);
       } else {
         this.riderGroup.rotation.x = THREE.MathUtils.lerp(this.riderGroup.rotation.x, 0, 0.1);
-        // Legs: carving + landing impact
-        const frontKnee = 0.6 + impactBend + lean * 0.2;
-        const rearKnee = 0.6 + impactBend - lean * 0.2;
-        const frontHip = -0.3 - impactBend * 0.5;
-        const rearHip = -0.3 - impactBend * 0.5;
+        // Hunch torso forward over toes via spine bones (not riderGroup — foot snap cancels that)
+        if (this._boneSpine1) this._boneSpine1.rotation.x = THREE.MathUtils.lerp(this._boneSpine1.rotation.x, 0.25, 0.1);
+        if (this._boneSpine2) this._boneSpine2.rotation.x = THREE.MathUtils.lerp(this._boneSpine2.rotation.x, 0.25, 0.1);
+        // Legs: deeper bend, knees over toes
+        const frontKnee = 0.8 + impactBend + lean * 0.2;
+        const rearKnee = 0.8 + impactBend - lean * 0.2;
+        const frontHip = -0.5 - impactBend * 0.5;
+        const rearHip = -0.5 - impactBend * 0.5;
 
         this.lerpJoint(this.hipL, 'x', frontHip, 0.12);
         this.lerpJoint(this.kneeL, 'x', frontKnee, 0.12);
         this.lerpJoint(this.hipR, 'x', rearHip, 0.12);
         this.lerpJoint(this.kneeR, 'x', rearKnee, 0.12);
 
-        // Arms: spread outward, stronger sway with turns
-        const armZ = this.equipmentType === 'ski' ? 0.75 : 0.7;
-        const armX = this.equipmentType === 'ski' ? 0.2 : 0.15;
+        // Arms: relaxed at sides, athletic snowboard stance
+        const armZ = this.equipmentType === 'ski' ? 0.75 : 0.35;
+        const armFwd = 0.15;
         this.lerpJoint(this.shoulderL, 'z', -armZ - lean * 0.25, 0.1);
-        this.lerpJoint(this.shoulderL, 'x', armX - lean * 0.2 + impactBend * 0.3, 0.1);
+        this.lerpJoint(this.shoulderL, 'x', armFwd - lean * 0.2 + impactBend * 0.3, 0.1);
         this.lerpJoint(this.elbowL, 'x', -0.3 - lean * 0.25, 0.1);
 
         this.lerpJoint(this.shoulderR, 'z', armZ - lean * 0.25, 0.1);
-        this.lerpJoint(this.shoulderR, 'x', armX + lean * 0.2 + impactBend * 0.3, 0.1);
+        this.lerpJoint(this.shoulderR, 'x', armFwd + lean * 0.2 + impactBend * 0.3, 0.1);
         this.lerpJoint(this.elbowR, 'x', -0.3 + lean * 0.25, 0.1);
       }
 
@@ -1253,7 +1510,7 @@ export class Player {
       const dropY = this.isTucking ? -0.15 : (-impactBend * 0.15 + breathe);
       this.riderGroup.position.y = THREE.MathUtils.lerp(this.riderGroup.position.y, dropY, 0.12);
 
-      // Rider leans into carve (shoulder rotation + body lean)
+      // Rider leans into carves
       this.riderGroup.rotation.z = THREE.MathUtils.lerp(
         this.riderGroup.rotation.z, this.edgeLeanSmooth * 0.3, 0.15
       );
@@ -1261,11 +1518,12 @@ export class Player {
       // Head looks into turns more aggressively + dips on landing impact
       const headLookY = -0.6 - lean * 0.35;
       this.lerpJoint(this.headGroup, 'y', headLookY, 0.1);
+      const headRestX = this._boneRest(this.headGroup, 'x');
       if (impactBend > 0.1) {
         this.headGroup.rotation.x = THREE.MathUtils.lerp(
-          this.headGroup.rotation.x, impactBend * 0.15, 0.15);
+          this.headGroup.rotation.x, impactBend * 0.15 + headRestX, 0.15);
       } else {
-        this.headGroup.rotation.x = THREE.MathUtils.lerp(this.headGroup.rotation.x, 0, 0.08);
+        this.headGroup.rotation.x = THREE.MathUtils.lerp(this.headGroup.rotation.x, headRestX, 0.08);
       }
 
       // Keep stance yaw
@@ -1664,6 +1922,9 @@ export class Player {
     this.visualYaw += yawDiff * yawSpeed;
 
     this.group.rotation.y = this.visualYaw;
+
+    // Snap GLB feet onto bindings every frame
+    this._snapFeetToBindings();
 
     return this.getState(terrain);
   }
@@ -2327,21 +2588,21 @@ export class Player {
 
     // Reset all joints to default riding pose — arms spread outward
     if (this.equipmentType === 'ski') {
-      this.shoulderL.rotation.set(0.15, 0, 0.8);
-      this.elbowL.rotation.set(-0.2, 0, 0);
-      this.shoulderR.rotation.set(0.15, 0, -0.8);
-      this.elbowR.rotation.set(-0.2, 0, 0);
+      this.setJoint(this.shoulderL, 0.15, 0, 0.8);
+      this.setJoint(this.elbowL, -0.2, 0, 0);
+      this.setJoint(this.shoulderR, 0.15, 0, -0.8);
+      this.setJoint(this.elbowR, -0.2, 0, 0);
     } else {
-      this.shoulderL.rotation.set(0.1, 0, 0.7);
-      this.elbowL.rotation.set(-0.2, 0, 0);
-      this.shoulderR.rotation.set(0.1, 0, -0.7);
-      this.elbowR.rotation.set(-0.2, 0, 0);
+      this.setJoint(this.shoulderL, 0.1, 0, 0.7);
+      this.setJoint(this.elbowL, -0.2, 0, 0);
+      this.setJoint(this.shoulderR, 0.1, 0, -0.7);
+      this.setJoint(this.elbowR, -0.2, 0, 0);
     }
-    this.hipL.rotation.set(-0.3, 0, 0);
-    this.kneeL.rotation.set(0.6, 0, 0);
-    this.hipR.rotation.set(-0.3, 0, 0);
-    this.kneeR.rotation.set(0.6, 0, 0);
-    this.headGroup.rotation.set(0, this.HEAD_YAW, 0);
+    this.setJoint(this.hipL, -0.3, 0, 0);
+    this.setJoint(this.kneeL, 0.6, 0, 0);
+    this.setJoint(this.hipR, -0.3, 0, 0);
+    this.setJoint(this.kneeR, 0.6, 0, 0);
+    this.setJoint(this.headGroup, 0, this.HEAD_YAW, 0);
 
     this.group.position.copy(this.position);
     this.group.rotation.set(0, Math.PI, 0);
@@ -2359,20 +2620,20 @@ export class Player {
     this.riderGroup.rotation.x = 0.3;
 
     // Legs: bent forward at hips, knees bent so feet touch ground
-    this.hipL.rotation.set(-1.5, 0.1, 0);
-    this.kneeL.rotation.set(1.6, 0, 0);
-    this.hipR.rotation.set(-1.5, -0.1, 0);
-    this.kneeR.rotation.set(1.6, 0, 0);
+    this.setJoint(this.hipL, -1.5, 0.1, 0);
+    this.setJoint(this.kneeL, 1.6, 0, 0);
+    this.setJoint(this.hipR, -1.5, -0.1, 0);
+    this.setJoint(this.kneeR, 1.6, 0, 0);
 
     // Arms: resting on knees, elbows out slightly
-    this.shoulderL.rotation.set(0.5, 0.2, -0.2);
-    this.elbowL.rotation.set(-0.9, 0, 0);
-    this.shoulderR.rotation.set(0.5, -0.2, 0.2);
-    this.elbowR.rotation.set(-0.9, 0, 0);
+    this.setJoint(this.shoulderL, 0.5, 0.2, -0.2);
+    this.setJoint(this.elbowL, -0.9, 0, 0);
+    this.setJoint(this.shoulderR, 0.5, -0.2, 0.2);
+    this.setJoint(this.elbowR, -0.9, 0, 0);
 
     // Head: looking slightly toward fire (forward and down)
-    this.headGroup.rotation.set(0, 0, 0);
-    this.neckGroup.rotation.set(-0.2, 0, 0);
+    this.setJoint(this.headGroup, 0, 0, 0);
+    this.setJoint(this.neckGroup, -0.2, 0, 0);
   }
 
   setBoardVisible(visible) {
