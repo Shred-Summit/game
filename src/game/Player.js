@@ -1194,7 +1194,8 @@ export class Player {
       if (wasInAir && this.airTime > 0.4) {
         for (const ramp of terrain.ramps) {
           if (ramp.type !== 'kicker' || ramp.landingZoneStartZ === undefined) continue;
-          if (Math.abs(this.position.z - ramp.position.z) > 50) continue;
+          if (this.position.z > ramp.position.z + 50) continue;
+          if (this.position.z < ramp.landingZoneEndZ - 5) continue;
           const dx = this.position.x - ramp.position.x;
           const z = this.position.z;
           if (Math.abs(dx) < ramp.landingWidth / 2 &&
@@ -1554,7 +1555,7 @@ export class Player {
 
         // Lock Y to rail surface height at player's Z (follows terrain slope)
         const terrainAtPlayer = terrain.computeHeight(this.position.x, this.position.z);
-        const railTop = terrainAtPlayer + this.grindRail.surfaceHeight;
+        const railTop = terrainAtPlayer + this._getRailHeightAtZ(this.grindRail, this.position.z);
         this.position.y = railTop + 0.2;
         this.velocity.y = 0;
 
@@ -1938,7 +1939,12 @@ export class Player {
 
     for (const ramp of terrain.ramps) {
       if (ramp.type !== 'kicker') continue;
-      if (Math.abs(this.position.z - ramp.position.z) > 50) continue;
+      // Asymmetric cull: 50 uphill is plenty; downhill must reach landing zone end
+      if (this.position.z > ramp.position.z + 50) continue;
+      const downhillLimit = ramp.landingZoneEndZ !== undefined
+        ? ramp.landingZoneEndZ - 5
+        : ramp.position.z - 50;
+      if (this.position.z < downhillLimit) continue;
 
       // Check kicker ramp surface (skip during cooldown to prevent re-launch)
       if (this.kickerCooldown <= 0) {
@@ -2037,6 +2043,19 @@ export class Player {
     }
   }
 
+  // Get rail surface height at a given Z, interpolating for variable-height rails
+  _getRailHeightAtZ(ramp, z) {
+    if (ramp.startHeight !== undefined && ramp.endHeight !== undefined) {
+      // Variable-height rail: interpolate from start (+Z/uphill) to end (-Z/downhill)
+      const dz = z - ramp.position.z;
+      const halfLen = ramp.length / 2;
+      // t=0 at +Z (entry/uphill), t=1 at -Z (exit/downhill)
+      const t = Math.max(0, Math.min(1, 0.5 - dz / ramp.length));
+      return ramp.startHeight * (1 - t) + ramp.endHeight * t;
+    }
+    return ramp.surfaceHeight;
+  }
+
   // ===== RAIL GRIND =====
   updateRailGrind(terrain, dt) {
     if (this.grinding) return;
@@ -2051,7 +2070,7 @@ export class Player {
       const dz = this.position.z - ramp.position.z;
       // Use terrain height at player's Z for accurate rail top on tilted rails
       const terrainH = terrain.computeHeight(this.position.x, this.position.z);
-      const railTop = terrainH + ramp.surfaceHeight;
+      const railTop = terrainH + this._getRailHeightAtZ(ramp, this.position.z);
       const dy = this.position.y - railTop;
 
       const absDx = Math.abs(dx);

@@ -492,7 +492,10 @@ export class Terrain {
       const feature = this.createRailByType(railLength, railHeight);
       const width = 4.0;
       const length = railLength;
-      const surfaceHeight = railHeight;
+      // Use actual rail height from geometry (each type sets its own)
+      const surfaceHeight = feature.userData.surfaceHeight || railHeight;
+      const startHeight = feature.userData.startHeight;
+      const endHeight = feature.userData.endHeight;
 
       // Compute terrain slope at rail endpoints to tilt rail
       const featureGlobalZ = zOffset + z;
@@ -505,12 +508,18 @@ export class Terrain {
       feature.rotation.x = -tiltAngle; // match slope angle
       this.scene.add(feature);
       chunk.objects.push(feature);
-      this.ramps.push({
+      const rampData = {
         mesh: feature,
         position: new THREE.Vector3(x, midY, featureGlobalZ),
         type: 'rail', width, length, surfaceHeight,
         lipHeight: 0, lipAngle: 0, chunkId,
-      });
+      };
+      // Variable-height rails store start/end for grind interpolation
+      if (startHeight !== undefined && endHeight !== undefined) {
+        rampData.startHeight = startHeight;
+        rampData.endHeight = endHeight;
+      }
+      this.ramps.push(rampData);
 
       // Register gap-on kicker for collision
       if (feature.userData.lip) {
@@ -932,6 +941,7 @@ export class Terrain {
     group.add(rail);
 
     this.addRailEntryLip(group, railLength / 2, railHeight);
+    group.userData.surfaceHeight = railHeight;
     return group;
   }
 
@@ -969,6 +979,9 @@ export class Terrain {
     group.add(rail);
 
     this.addRailEntryLip(group, railLength / 2, startHeight);
+    group.userData.surfaceHeight = startHeight;
+    group.userData.startHeight = startHeight;
+    group.userData.endHeight = endHeight;
     return group;
   }
 
@@ -1013,6 +1026,9 @@ export class Terrain {
 
     // Entry lip at +Z end (rainbow ends are low at 0.3)
     this.addRailEntryLip(group, railLength / 2, 0.3);
+    group.userData.surfaceHeight = peakHeight + 0.3; // peak of the arc
+    group.userData.startHeight = 0.3;
+    group.userData.endHeight = 0.3;
     return group;
   }
 
@@ -1068,6 +1084,9 @@ export class Terrain {
     }
 
     this.addRailEntryLip(group, totalLength / 2, railHeight);
+    group.userData.surfaceHeight = railHeight;
+    group.userData.startHeight = railHeight;
+    group.userData.endHeight = railHeight - dropHeight;
     return group;
   }
 
@@ -1112,6 +1131,7 @@ export class Terrain {
     group.add(rampMesh);
 
     this.addRailEntryLip(group, boxLength / 2, boxHeight);
+    group.userData.surfaceHeight = boxHeight;
     return group;
   }
 
@@ -1159,6 +1179,7 @@ export class Terrain {
     }
 
     this.addRailEntryLip(group, 5 * s, railHeight);
+    group.userData.surfaceHeight = railHeight;
     return group;
   }
 
@@ -1218,6 +1239,9 @@ export class Terrain {
     }
 
     this.addRailEntryLip(group, 5 * s, railHeight);
+    group.userData.surfaceHeight = railHeight;
+    group.userData.startHeight = railHeight;
+    group.userData.endHeight = railHeight - kinkDrop;
     return group;
   }
 
@@ -1277,6 +1301,9 @@ export class Terrain {
     }
 
     this.addRailEntryLip(group, totalLength / 2, startHeight);
+    group.userData.surfaceHeight = startHeight;
+    group.userData.startHeight = startHeight;
+    group.userData.endHeight = endHeight;
     return group;
   }
 
@@ -1319,6 +1346,7 @@ export class Terrain {
     group.add(rail);
 
     this.addRailEntryLip(group, railLength / 2, postHeight);
+    group.userData.surfaceHeight = postHeight;
     return group;
   }
 
@@ -1375,6 +1403,10 @@ export class Terrain {
     }
 
     this.addRailEntryLip(group, totalLength / 2, startHeight);
+    const finalHeight = startHeight - (steps - 1) * stepDrop;
+    group.userData.surfaceHeight = startHeight;
+    group.userData.startHeight = startHeight;
+    group.userData.endHeight = finalHeight;
     return group;
   }
 
@@ -1434,6 +1466,7 @@ export class Terrain {
 
     // Gap-on entry kicker at +Z (uphill) end
     this.addRailEntryLip(group, railLength / 2, railHeight);
+    group.userData.surfaceHeight = railHeight;
     return group;
   }
 
@@ -1465,6 +1498,7 @@ export class Terrain {
     group.add(snow);
 
     this.addRailEntryLip(group, ledgeLength / 2, ledgeHeight);
+    group.userData.surfaceHeight = ledgeHeight;
     return group;
   }
 
@@ -1527,6 +1561,9 @@ export class Terrain {
     }
 
     this.addRailEntryLip(group, totalLength / 2, startHeight);
+    group.userData.surfaceHeight = startHeight;
+    group.userData.startHeight = startHeight;
+    group.userData.endHeight = endHeight;
     return group;
   }
 
@@ -1569,6 +1606,9 @@ export class Terrain {
     group.add(snowCap);
 
     this.addRailEntryLip(group, hubbaLength / 2, startHeight);
+    group.userData.surfaceHeight = startHeight;
+    group.userData.startHeight = startHeight;
+    group.userData.endHeight = 0.05;
     return group;
   }
 
