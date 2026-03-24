@@ -2024,6 +2024,31 @@ export class Terrain {
     return normal;
   }
 
+  // Recursively dispose all geometries and materials in an object tree
+  _disposeObject(obj) {
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+      if (Array.isArray(obj.material)) {
+        for (const m of obj.material) m.dispose();
+      } else {
+        obj.material.dispose();
+      }
+    }
+    if (obj.children) {
+      for (const child of obj.children) this._disposeObject(child);
+    }
+  }
+
+  _disposeChunk(chunk) {
+    this.scene.remove(chunk.mesh);
+    chunk.mesh.geometry.dispose();
+    if (chunk.mesh.material) chunk.mesh.material.dispose();
+    for (const obj of chunk.objects) {
+      this.scene.remove(obj);
+      this._disposeObject(obj);
+    }
+  }
+
   update(playerZ) {
     const neededChunks = Math.ceil(-playerZ / this.chunkLength) + 4;
     while (this.chunksGenerated < neededChunks) {
@@ -2034,9 +2059,7 @@ export class Terrain {
       this.chunks[0].zOffset > -playerZ + this.chunkLength * 2
     ) {
       const old = this.chunks.shift();
-      this.scene.remove(old.mesh);
-      old.mesh.geometry.dispose();
-      for (const obj of old.objects) this.scene.remove(obj);
+      this._disposeChunk(old);
       // Purge ramps and obstacles belonging to this chunk
       const cid = old.chunkId;
       this.ramps = this.ramps.filter(r => r.chunkId !== cid);
@@ -2046,9 +2069,7 @@ export class Terrain {
 
   dispose() {
     for (const chunk of this.chunks) {
-      this.scene.remove(chunk.mesh);
-      chunk.mesh.geometry.dispose();
-      for (const obj of chunk.objects) this.scene.remove(obj);
+      this._disposeChunk(chunk);
     }
     this.chunks = [];
     this.obstacles = [];

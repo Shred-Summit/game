@@ -2976,9 +2976,7 @@ export class BackcountryTerrain {
       this.chunks[0].zOffset > playerZ + this.chunkLength * 2
     ) {
       const old = this.chunks.shift();
-      this.scene.remove(old.mesh);
-      old.mesh.geometry.dispose();
-      for (const obj of old.objects) this.scene.remove(obj);
+      this._disposeChunk(old);
       // Clean up obstacles belonging to this chunk
       if (old.chunkObstacles && old.chunkObstacles.length > 0) {
         const toRemove = new Set(old.chunkObstacles);
@@ -2996,9 +2994,7 @@ export class BackcountryTerrain {
   reset(spawnZ = 0) {
     // Dispose all existing chunks
     for (const chunk of this.chunks) {
-      this.scene.remove(chunk.mesh);
-      chunk.mesh.geometry.dispose();
-      for (const obj of chunk.objects) this.scene.remove(obj);
+      this._disposeChunk(chunk);
     }
     this.chunks = [];
     this.obstacles = [];
@@ -3469,12 +3465,35 @@ export class BackcountryTerrain {
     return group;
   }
 
+  // Recursively dispose all geometries and materials in an object tree
+  _disposeObject(obj) {
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+      if (Array.isArray(obj.material)) {
+        for (const m of obj.material) m.dispose();
+      } else {
+        obj.material.dispose();
+      }
+    }
+    if (obj.children) {
+      for (const child of obj.children) this._disposeObject(child);
+    }
+  }
+
+  _disposeChunk(chunk) {
+    this.scene.remove(chunk.mesh);
+    chunk.mesh.geometry.dispose();
+    if (chunk.mesh.material) chunk.mesh.material.dispose();
+    for (const obj of chunk.objects) {
+      this.scene.remove(obj);
+      this._disposeObject(obj);
+    }
+  }
+
   // Clean up everything when switching back to park
   dispose() {
     for (const chunk of this.chunks) {
-      this.scene.remove(chunk.mesh);
-      chunk.mesh.geometry.dispose();
-      for (const obj of chunk.objects) this.scene.remove(obj);
+      this._disposeChunk(chunk);
     }
     this.chunks = [];
     this.obstacles = [];
